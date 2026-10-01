@@ -1,0 +1,20 @@
+# Build and output directories
+target/
+bin/
+lib/
+
+# Pascal compiled units and object files
+*.ppu
+*.o
+*.a
+*.so
+*.compiled
+*.rst
+*.rsj
+*.or
+
+# Editor backups
+*~
+*.bak
+*.orig
+.DS_Store
