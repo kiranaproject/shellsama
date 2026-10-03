@@ -4,7 +4,9 @@ program TestRunner;
 
 uses
   Classes, SysUtils, fpcunit, testregistry, consoletestrunner,
-  ShellSama.Test;
+  ShellSama.Test,
+  ShellSama.DesktopApps.Test,
+  ShellSama.Launcher.Test;
 
 var
   Application: TTestRunner;
