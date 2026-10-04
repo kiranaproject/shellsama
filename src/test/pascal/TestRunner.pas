@@ -6,7 +6,8 @@ uses
   Classes, SysUtils, fpcunit, testregistry, consoletestrunner,
   ShellSama.Test,
   ShellSama.DesktopApps.Test,
-  ShellSama.Launcher.Test;
+  ShellSama.Launcher.Test,
+  ShellSama.BottomPanel.Test;
 
 var
   Application: TTestRunner;

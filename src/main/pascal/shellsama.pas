@@ -11,18 +11,22 @@ uses
   ShellSama.LibFt,
   ShellSama.Panel,
   ShellSama.DesktopApps,
-  ShellSama.Launcher;
+  ShellSama.Launcher,
+  ShellSama.BottomPanel;
 
 var
   Panel: TShellPanel;
   Launcher: TShellLauncher;
+  BottomPanel: TShellBottomPanel;
   AutoShowLauncher: Boolean;
+  NoBottomPanel: Boolean;
   i: Integer;
   arg: string;
 begin
   WriteLn('shellsama — Samarinda Desktop Shell');
 
   AutoShowLauncher := False;
+  NoBottomPanel := False;
   for i := 1 to ParamCount do
   begin
     arg := ParamStr(i);
@@ -35,14 +39,19 @@ begin
     begin
       WriteLn('Usage: shellsama [options]');
       WriteLn('Options:');
-      WriteLn('  --show-launcher   Show the application launcher immediately on start');
-      WriteLn('  --version, -v     Print version and exit');
-      WriteLn('  --help, -h        Print this help message and exit');
+      WriteLn('  --show-launcher    Show the application launcher immediately on start');
+      WriteLn('  --no-bottom-panel  Do not display the bottom taskbar panel');
+      WriteLn('  --version, -v      Print version and exit');
+      WriteLn('  --help, -h         Print this help message and exit');
       Halt(0);
     end
     else if arg = '--show-launcher' then
     begin
       AutoShowLauncher := True;
+    end
+    else if arg = '--no-bottom-panel' then
+    begin
+      NoBottomPanel := True;
     end;
   end;
 
@@ -74,10 +83,25 @@ begin
       WriteLn('Application Launcher ready (Super key toggles launcher)');
       WriteLn('Loaded ', Launcher.AppList.AppCount(), ' desktop application(s)');
 
-      if AutoShowLauncher then
-        Launcher.Show();
+      if not NoBottomPanel then
+      begin
+        BottomPanel := TShellBottomPanel.Create(Launcher);
+        BottomPanel.Show();
+        WriteLn('Bottom Panel & Taskbar ready at (', BottomPanel.PanelX(), ', ', BottomPanel.PanelY(), ') ',
+                BottomPanel.PanelWidth(), 'x', BottomPanel.PanelHeight(), ' px');
+      end
+      else
+        BottomPanel := nil;
 
-      ft_main_loop();
+      try
+        if AutoShowLauncher then
+          Launcher.Show();
+
+        ft_main_loop();
+      finally
+        if Assigned(BottomPanel) then
+          BottomPanel.Free();
+      end;
     finally
       Launcher.Free();
     end;

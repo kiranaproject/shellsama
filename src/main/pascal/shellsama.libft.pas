@@ -16,6 +16,11 @@ const
   FT_WINDOW_TYPE_DROPDOWN_MENU = 3;
   FT_WINDOW_TYPE_TOOLTIP       = 4;
   FT_WINDOW_TYPE_UTILITY       = 5;
+  FT_WINDOW_TYPE_DOCK          = 6;
+
+  FT_TEXT_ALIGN_LEFT           = 0;
+  FT_TEXT_ALIGN_CENTER         = 1;
+  FT_TEXT_ALIGN_RIGHT          = 2;
 
 type
   FtWidget = Pointer;
@@ -26,6 +31,7 @@ type
   FtEntryChangeCallback = procedure(widget: FtWidget; text: PChar; user_data: Pointer); cdecl;
   FtEntrySubmitCallback = procedure(widget: FtWidget; text: PChar; user_data: Pointer); cdecl;
   FtEventFilterFunc = function(event: Pointer): Boolean; cdecl;
+  FtTickCallback = procedure(user_data: Pointer); cdecl;
 
 var
   ft_init: procedure(); cdecl = nil;
@@ -42,11 +48,25 @@ var
   ft_window_grab_input: procedure(window: FtWidget); cdecl = nil;
   ft_window_ungrab_input: procedure(window: FtWidget); cdecl = nil;
   ft_window_get_native_handle: function(window: FtWidget): Pointer; cdecl = nil;
+  ft_window_set_strut_partial: procedure(window: FtWidget;
+    left, right, top, bottom: cint32;
+    left_start_y, left_end_y: cint32;
+    right_start_y, right_end_y: cint32;
+    top_start_x, top_end_x: cint32;
+    bottom_start_x, bottom_end_x: cint32); cdecl = nil;
 
   ft_widget_show: procedure(widget: FtWidget); cdecl = nil;
   ft_widget_hide: procedure(widget: FtWidget); cdecl = nil;
   ft_widget_invalidate: procedure(widget: FtWidget); cdecl = nil;
   ft_widget_set_focus: procedure(widget: FtWidget); cdecl = nil;
+  ft_widget_set_bounds: procedure(widget: FtWidget; x, y, w, h: cint32); cdecl = nil;
+  ft_widget_destroy: procedure(widget: FtWidget); cdecl = nil;
+
+  ft_text_create: function(parent: FtWidget; x, y, w, h: cint32; text: PChar): FtWidget; cdecl = nil;
+  ft_text_set_text: procedure(text_widget: FtWidget; text: PChar); cdecl = nil;
+  ft_text_get_text: function(text_widget: FtWidget): PChar; cdecl = nil;
+  ft_text_set_alignment: procedure(text_widget: FtWidget; alignment: cint32); cdecl = nil;
+  ft_text_set_color: procedure(text_widget: FtWidget; r, g, b: Double); cdecl = nil;
 
   ft_entry_create: function(parent: FtWidget; x, y, w, h: cint32; text: PChar): FtWidget; cdecl = nil;
   ft_entry_set_text: procedure(entry: FtWidget; text: PChar); cdecl = nil;
@@ -66,6 +86,7 @@ var
   ft_screen_get_width: function(): cint32; cdecl = nil;
   ft_screen_get_height: function(): cint32; cdecl = nil;
   ft_register_event_filter: procedure(filter: FtEventFilterFunc); cdecl = nil;
+  ft_set_tick_callback: procedure(callback: FtTickCallback; user_data: Pointer); cdecl = nil;
   ft_backend_get_connection: function(): Pointer; cdecl = nil;
   ft_backend_get_screen: function(): Pointer; cdecl = nil;
   ft_backend_get_key_symbols: function(): Pointer; cdecl = nil;
@@ -137,11 +158,20 @@ begin
   Pointer(ft_window_grab_input) := GetProcedureAddress(GLibHandle, 'ft_window_grab_input');
   Pointer(ft_window_ungrab_input) := GetProcedureAddress(GLibHandle, 'ft_window_ungrab_input');
   Pointer(ft_window_get_native_handle) := GetProcedureAddress(GLibHandle, 'ft_window_get_native_handle');
+  Pointer(ft_window_set_strut_partial) := GetProcedureAddress(GLibHandle, 'ft_window_set_strut_partial');
 
   Pointer(ft_widget_show) := GetProcedureAddress(GLibHandle, 'ft_widget_show');
   Pointer(ft_widget_hide) := GetProcedureAddress(GLibHandle, 'ft_widget_hide');
   Pointer(ft_widget_invalidate) := GetProcedureAddress(GLibHandle, 'ft_widget_invalidate');
   Pointer(ft_widget_set_focus) := GetProcedureAddress(GLibHandle, 'ft_widget_set_focus');
+  Pointer(ft_widget_set_bounds) := GetProcedureAddress(GLibHandle, 'ft_widget_set_bounds');
+  Pointer(ft_widget_destroy) := GetProcedureAddress(GLibHandle, 'ft_widget_destroy');
+
+  Pointer(ft_text_create) := GetProcedureAddress(GLibHandle, 'ft_text_create');
+  Pointer(ft_text_set_text) := GetProcedureAddress(GLibHandle, 'ft_text_set_text');
+  Pointer(ft_text_get_text) := GetProcedureAddress(GLibHandle, 'ft_text_get_text');
+  Pointer(ft_text_set_alignment) := GetProcedureAddress(GLibHandle, 'ft_text_set_alignment');
+  Pointer(ft_text_set_color) := GetProcedureAddress(GLibHandle, 'ft_text_set_color');
 
   Pointer(ft_entry_create) := GetProcedureAddress(GLibHandle, 'ft_entry_create');
   Pointer(ft_entry_set_text) := GetProcedureAddress(GLibHandle, 'ft_entry_set_text');
@@ -161,6 +191,7 @@ begin
   Pointer(ft_screen_get_width) := GetProcedureAddress(GLibHandle, 'ft_screen_get_width');
   Pointer(ft_screen_get_height) := GetProcedureAddress(GLibHandle, 'ft_screen_get_height');
   Pointer(ft_register_event_filter) := GetProcedureAddress(GLibHandle, 'ft_register_event_filter');
+  Pointer(ft_set_tick_callback) := GetProcedureAddress(GLibHandle, 'ft_set_tick_callback');
   Pointer(ft_backend_get_connection) := GetProcedureAddress(GLibHandle, 'ft_backend_get_connection');
   Pointer(ft_backend_get_screen) := GetProcedureAddress(GLibHandle, 'ft_backend_get_screen');
   Pointer(ft_backend_get_key_symbols) := GetProcedureAddress(GLibHandle, 'ft_backend_get_key_symbols');
