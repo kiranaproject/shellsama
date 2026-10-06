@@ -14,3 +14,8 @@ All code in this project must adhere strictly to the conventions documented in [
 - **`project.xml`** is the only project descriptor used by Pasbuild (`pasbuild.json` does not exist).
 - **`find_by_name` Requires `Pattern`**: Always supply `Pattern: "*"` even when specifying `Extensions` or `Type`.
 - **Required Metadata**: Every tool call must include both `toolSummary` (2–5 word noun phrase) and `toolAction` (2–5 word verb phrase).
+
+## Linux Windowing & Display Server Policy
+
+- **Strictly X11/XCB Only (No Wayland)**:
+  - `shellsama` is built on native X11/XCB and `libft.so`. Never reference, propose, or insert Wayland into code, architecture, or documentation.
