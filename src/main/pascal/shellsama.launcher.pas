@@ -1,4 +1,4 @@
-{ Unit ShellSama.Launcher — Centered Application Launcher using libft.so C ABI }
+{ Unit ShellSama.Launcher — Centered Application Launcher using ftpas }
 
 unit ShellSama.Launcher;
 
@@ -10,7 +10,7 @@ interface
 uses
   SysUtils, Classes, Math, BaseUnix, ctypes,
   Floria.XCB, Floria.XCB.Keysyms, Floria.X11.KeySym,
-  ShellSama.LibFt,
+  ftpas.api, ftpas.types, ftpas,
   ShellSama.DesktopApps;
 
 const
@@ -22,9 +22,9 @@ const
 type
   TShellLauncher = class
   private
-    FWindow          : FtWidget;
-    FSearchEntry     : FtWidget;
-    FItemButtons     : array[0..LAUNCHER_VISIBLE_ITEMS - 1] of FtWidget;
+    FWindow          : TFtWindow;
+    FSearchEntry     : TFtEntry;
+    FItemButtons     : array[0..LAUNCHER_VISIBLE_ITEMS - 1] of TFtButton;
     FAppList         : TDesktopAppList;
     FCurrentResults  : TDesktopAppArray;
     FSelectedIndex   : Integer;
@@ -46,6 +46,10 @@ type
     procedure EnsureSelectionVisible();
     procedure LaunchApp(const AApp: TDesktopApp);
     function GetResultsCount(): Integer;
+
+    procedure HandleSearchEntryChange(Sender: TFtWidget; const AText: string);
+    procedure HandleSearchEntrySubmit(Sender: TFtWidget; const AText: string);
+    procedure HandleItemButtonClick(Sender: TFtButton);
   public
     constructor Create();
     destructor Destroy(); override;
@@ -61,12 +65,12 @@ type
     procedure SelectPageUp();
     procedure SelectAndLaunch(AAppIndex: Integer);
     procedure LaunchCurrentSelection();
-    procedure HandleItemClick(AButton: FtWidget);
+    procedure HandleItemClick(AButton: TFtButton);
 
     function HandleXcbEvent(Event: Pxcb_generic_event_t): Boolean;
 
-    property Window        : FtWidget         read FWindow;
-    property SearchEntry   : FtWidget         read FSearchEntry;
+    property Window        : TFtWindow        read FWindow;
+    property SearchEntry   : TFtEntry         read FSearchEntry;
     property AppList       : TDesktopAppList  read FAppList;
     property SelectedIndex : Integer          read FSelectedIndex;
     property ScrollOffset  : Integer          read FScrollOffset;
@@ -82,31 +86,12 @@ implementation
 procedure c_free(p: Pointer); cdecl; external 'c' name 'free';
 function libc_system(cmd: PChar): cint; cdecl; external 'c' name 'system';
 
-// C ABI Callbacks
-procedure OnSearchEntryChange(widget: FtWidget; text: PChar; user_data: Pointer); cdecl;
+function LauncherEventFilterCallback(event: Pointer): cint32; cdecl;
 begin
-  if Assigned(user_data) and Assigned(text) then
-    TShellLauncher(user_data).HandleSearchChanged(StrPas(text));
-end;
-
-procedure OnSearchEntrySubmit(widget: FtWidget; text: PChar; user_data: Pointer); cdecl;
-begin
-  if Assigned(user_data) then
-    TShellLauncher(user_data).LaunchCurrentSelection();
-end;
-
-procedure OnItemButtonClick(widget: FtWidget; user_data: Pointer); cdecl;
-begin
-  if Assigned(user_data) then
-    TShellLauncher(user_data).HandleItemClick(widget);
-end;
-
-function LauncherEventFilterCallback(event: Pointer): Boolean; cdecl;
-begin
-  if Assigned(GLauncherInstance) then
-    Result := GLauncherInstance.HandleXcbEvent(Pxcb_generic_event_t(event))
+  if Assigned(GLauncherInstance) and GLauncherInstance.HandleXcbEvent(Pxcb_generic_event_t(event)) then
+    Result := 1
   else
-    Result := False;
+    Result := 0;
 end;
 
 // -----------------------------------------------------------------------------
@@ -123,9 +108,9 @@ begin
   FSuperPressed := False;
   FOtherKeyPressed := False;
 
-  if not IsLibFtLoaded() then
+  if not FtIsLibLoaded() then
   begin
-    if not LoadLibFt() then
+    if not FtLoadLib() then
       raise Exception.Create('ShellSama: Could not load libft.so shared library.');
   end;
 
@@ -141,16 +126,25 @@ begin
   ResolveKeycodes();
   GrabSuperKey();
 
-  ft_register_event_filter(@LauncherEventFilterCallback);
+  if Assigned(ft_register_event_filter) then
+    ft_register_event_filter(@LauncherEventFilterCallback);
 end;
 
 destructor TShellLauncher.Destroy();
 begin
-  ft_register_event_filter(nil);
+  if Assigned(ft_register_event_filter) then
+    ft_register_event_filter(nil);
   UngrabSuperKey();
 
   if GLauncherInstance = Self then
     GLauncherInstance := nil;
+
+  if Assigned(FWindow) then
+  begin
+    FWindow.Free();
+    FWindow := nil;
+    FSearchEntry := nil;
+  end;
 
   if Assigned(FAppList) then
   begin
@@ -166,39 +160,53 @@ begin
   Result := Length(FCurrentResults);
 end;
 
+procedure TShellLauncher.HandleSearchEntryChange(Sender: TFtWidget; const AText: string);
+begin
+  HandleSearchChanged(AText);
+end;
+
+procedure TShellLauncher.HandleSearchEntrySubmit(Sender: TFtWidget; const AText: string);
+begin
+  LaunchCurrentSelection();
+end;
+
+procedure TShellLauncher.HandleItemButtonClick(Sender: TFtButton);
+begin
+  HandleItemClick(Sender);
+end;
+
 procedure TShellLauncher.InitializeUI();
 var
   i: Integer;
   itemY: Integer;
   screenWidth, screenHeight: Integer;
 begin
-  FWindow := ft_window_create(LAUNCHER_WIDTH, LAUNCHER_HEIGHT, 'Samarinda Launcher');
-  ft_window_set_borderless(FWindow, 1);
-  ft_window_set_skip_taskbar(FWindow, 1);
-  ft_window_set_window_type(FWindow, FT_WINDOW_TYPE_DIALOG);
+  FWindow := TFtWindow.Create(LAUNCHER_WIDTH, LAUNCHER_HEIGHT, 'Samarinda Launcher');
+  FWindow.Borderless := True;
+  FWindow.SkipTaskbar := True;
+  FWindow.WindowType := ftwtDialog;
 
-  screenWidth := ft_screen_get_width();
-  screenHeight := ft_screen_get_height();
-  ft_window_set_position(
-    FWindow,
+  screenWidth := FtApp().ScreenWidth;
+  screenHeight := FtApp().ScreenHeight;
+  FWindow.SetPosition(
     (screenWidth - LAUNCHER_WIDTH) div 2,
     (screenHeight - LAUNCHER_HEIGHT) div 2
   );
 
   // Top search entry
-  FSearchEntry := ft_entry_create(FWindow, 20, 18, LAUNCHER_WIDTH - 40, 38, '');
-  ft_entry_set_placeholder(FSearchEntry, 'Search applications...');
-  ft_entry_on_change(FSearchEntry, @OnSearchEntryChange, Pointer(Self));
-  ft_entry_on_submit(FSearchEntry, @OnSearchEntrySubmit, Pointer(Self));
+  FSearchEntry := TFtEntry.Create(FWindow, 20, 18, LAUNCHER_WIDTH - 40, 38, '');
+  FSearchEntry.Placeholder := 'Search applications...';
+  FSearchEntry.OnChange := @HandleSearchEntryChange;
+  FSearchEntry.OnSubmit := @HandleSearchEntrySubmit;
 
   // Pre-allocate 10 visible buttons for virtual scrolling
   for i := 0 to LAUNCHER_VISIBLE_ITEMS - 1 do
   begin
     itemY := 68 + (i * LAUNCHER_ITEM_HEIGHT);
-    FItemButtons[i] := ft_button_create(FWindow, 20, itemY, LAUNCHER_WIDTH - 40, LAUNCHER_ITEM_HEIGHT, '');
-    ft_button_set_corner_radius(FItemButtons[i], 6.0);
-    ft_button_set_toggle(FItemButtons[i], 1);
-    ft_button_on_click(FItemButtons[i], @OnItemButtonClick, Pointer(Self));
+    FItemButtons[i] := TFtButton.Create(FWindow, 20, itemY, LAUNCHER_WIDTH - 40, LAUNCHER_ITEM_HEIGHT, '');
+    FItemButtons[i].CornerRadius := 6.0;
+    FItemButtons[i].IsToggle := True;
+    FItemButtons[i].OnClick := @HandleItemButtonClick;
   end;
 
   UpdateVisibleItems();
@@ -288,17 +296,17 @@ begin
     if resIdx < totCount then
     begin
       isSelected := (resIdx = FSelectedIndex);
-      ft_button_set_caption(FItemButtons[i], PChar(FCurrentResults[resIdx].Name));
-      ft_button_set_toggled(FItemButtons[i], Ord(isSelected));
-      ft_widget_show(FItemButtons[i]);
+      FItemButtons[i].Caption := FCurrentResults[resIdx].Name;
+      FItemButtons[i].Toggled := isSelected;
+      FItemButtons[i].Show();
     end
     else
     begin
-      ft_button_set_caption(FItemButtons[i], '');
-      ft_button_set_toggled(FItemButtons[i], 0);
-      ft_widget_hide(FItemButtons[i]);
+      FItemButtons[i].Caption := '';
+      FItemButtons[i].Toggled := False;
+      FItemButtons[i].Hide();
     end;
-    ft_widget_invalidate(FItemButtons[i]);
+    FItemButtons[i].Invalidate();
   end;
 end;
 
@@ -333,7 +341,8 @@ begin
   FSelectedIndex := 0;
   FScrollOffset := 0;
   UpdateVisibleItems();
-  ft_widget_invalidate(FWindow);
+  if Assigned(FWindow) then
+    FWindow.Invalidate();
 end;
 
 procedure TShellLauncher.SelectNext();
@@ -389,7 +398,7 @@ begin
   end;
 end;
 
-procedure TShellLauncher.HandleItemClick(AButton: FtWidget);
+procedure TShellLauncher.HandleItemClick(AButton: TFtButton);
 var
   i, appIdx: Integer;
 begin
@@ -438,37 +447,36 @@ procedure TShellLauncher.Show();
 var
   screenWidth, screenHeight: Integer;
 begin
-  if FVisible then Exit;
+  if FVisible or (FWindow = nil) then Exit;
 
-  screenWidth := ft_screen_get_width();
-  screenHeight := ft_screen_get_height();
-  ft_window_set_position(
-    FWindow,
+  screenWidth := FtApp().ScreenWidth;
+  screenHeight := FtApp().ScreenHeight;
+  FWindow.SetPosition(
     (screenWidth - LAUNCHER_WIDTH) div 2,
     (screenHeight - LAUNCHER_HEIGHT) div 2
   );
 
-  ft_entry_set_text(FSearchEntry, '');
+  FSearchEntry.Text := '';
   FCurrentResults := FAppList.Search('');
   FSelectedIndex := 0;
   FScrollOffset := 0;
   UpdateVisibleItems();
 
-  ft_widget_show(FWindow);
-  ft_window_bring_to_front(FWindow);
-  ft_widget_set_focus(FSearchEntry);
-  ft_window_grab_input(FWindow);
+  FWindow.Show();
+  FWindow.BringToFront();
+  FSearchEntry.SetFocus();
+  FWindow.GrabInput();
 
   FVisible := True;
-  ft_widget_invalidate(FWindow);
+  FWindow.Invalidate();
 end;
 
 procedure TShellLauncher.Hide();
 begin
-  if not FVisible then Exit;
+  if not FVisible or (FWindow = nil) then Exit;
 
-  ft_window_ungrab_input(FWindow);
-  ft_widget_hide(FWindow);
+  FWindow.UngrabInput();
+  FWindow.Hide();
   FVisible := False;
 end;
 

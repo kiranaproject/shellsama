@@ -29,5 +29,9 @@
       <name>florialib</name>
       <version>0.0.1-SNAPSHOT</version>
     </dependency>
+    <dependency>
+      <name>ftpas</name>
+      <version>0.0.1-SNAPSHOT</version>
+    </dependency>
   </dependencies>
 </project>

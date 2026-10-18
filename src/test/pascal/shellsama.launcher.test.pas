@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, fpcunit, testregistry,
-  ShellSama.LibFt,
+  ftpas.api, ftpas.types, ftpas,
   ShellSama.DesktopApps,
   ShellSama.Launcher;
 
@@ -31,17 +31,17 @@ implementation
 
 procedure TLauncherTest.SetUp();
 begin
-  if not IsLibFtLoaded() then
+  if not FtIsLibLoaded() then
   begin
-    if not LoadLibFt() then
+    if not FtLoadLib() then
       Fail('Could not load libft.so');
   end;
 
   try
-    ft_init();
+    FtApp().Initialize();
   except
     on E: Exception do
-      Fail('ft_init failed: ' + E.Message);
+      Fail('FtApp.Initialize failed: ' + E.Message);
   end;
 
   FLauncher := TShellLauncher.Create();
@@ -58,7 +58,7 @@ end;
 
 procedure TLauncherTest.TestLibFtLoaded();
 begin
-  AssertTrue('libft.so should be loaded', IsLibFtLoaded());
+  AssertTrue('libft.so should be loaded', FtIsLibLoaded());
   AssertNotNull('ft_init should be bound', Pointer(ft_init));
   AssertNotNull('ft_window_create should be bound', Pointer(ft_window_create));
   AssertNotNull('ft_entry_create should be bound', Pointer(ft_entry_create));

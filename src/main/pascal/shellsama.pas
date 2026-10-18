@@ -8,7 +8,7 @@ program shellsama;
 
 uses
   SysUtils, Classes,
-  ShellSama.LibFt,
+  ftpas, ftpas.api,
   ShellSama.Panel,
   ShellSama.DesktopApps,
   ShellSama.Launcher,
@@ -62,14 +62,14 @@ begin
     WriteLn('  Theme:     ', Panel.Config.ThemeName);
     WriteLn('  Strut Top: ', Panel.ComputeStrut().Top, ' px');
 
-    if not LoadLibFt() then
+    if not FtLoadLib() then
     begin
       WriteLn('Notice: Cannot load libft.so. Running in non-display mode.');
       Exit;
     end;
 
     try
-      ft_init();
+      FtApp().Initialize();
     except
       on E: Exception do
       begin
@@ -97,7 +97,7 @@ begin
         if AutoShowLauncher then
           Launcher.Show();
 
-        ft_main_loop();
+        FtApp().Run();
       finally
         if Assigned(BottomPanel) then
           BottomPanel.Free();

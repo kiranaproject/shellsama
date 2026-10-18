@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, fpcunit, testregistry,
-  ShellSama.LibFt,
+  ftpas.api, ftpas.types, ftpas,
   ShellSama.Launcher,
   ShellSama.BottomPanel;
 
@@ -31,17 +31,17 @@ implementation
 
 procedure TBottomPanelTest.SetUp();
 begin
-  if not IsLibFtLoaded() then
+  if not FtIsLibLoaded() then
   begin
-    if not LoadLibFt() then
+    if not FtLoadLib() then
       Fail('Could not load libft.so');
   end;
 
   try
-    ft_init();
+    FtApp().Initialize();
   except
     on E: Exception do
-      Fail('ft_init failed: ' + E.Message);
+      Fail('FtApp.Initialize failed: ' + E.Message);
   end;
 
   FLauncher := TShellLauncher.Create();
@@ -68,8 +68,8 @@ var
   sw, sh: Integer;
 begin
   AssertNotNull('Panel instance should be created', FPanel);
-  sw := ft_screen_get_width();
-  sh := ft_screen_get_height();
+  sw := FtApp().ScreenWidth;
+  sh := FtApp().ScreenHeight;
 
   AssertEquals('Panel X must be 0', 0, FPanel.PanelX());
   AssertEquals('Panel Y must be at bottom of screen', sh - 38, FPanel.PanelY());

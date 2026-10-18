@@ -10,7 +10,7 @@ interface
 uses
   Classes, SysUtils, Math,
   Floria.XCB,
-  ShellSama.LibFt,
+  ftpas.api, ftpas.types, ftpas,
   ShellSama.Launcher;
 
 type
@@ -24,15 +24,15 @@ type
     Title      : string;
     IsActive   : Boolean;
     IsMinimized: Boolean;
-    Button     : FtWidget;
+    Button     : TFtButton;
   end;
 
   TShellBottomPanel = class
   private
-    FWindow         : FtWidget;
-    FLauncherBtn    : FtWidget;
-    FClockText      : FtWidget;
-    FShowDesktopBtn : FtWidget;
+    FWindow         : TFtWindow;
+    FLauncherBtn    : TFtButton;
+    FClockText      : TFtLabel;
+    FShowDesktopBtn : TFtButton;
     FLauncher       : TShellLauncher;
     FIsVisible      : Boolean;
     FShowingDesktop : Boolean;
@@ -77,6 +77,10 @@ type
     function QueryWindowTitle(AWin: Cardinal): string;
     function ShouldShowTask(AWin: Cardinal): Boolean;
     function IsWindowMinimized(AWin: Cardinal): Boolean;
+
+    procedure HandleLauncherButtonClick(Sender: TFtButton);
+    procedure HandleShowDesktopButtonClick(Sender: TFtButton);
+    procedure HandleTaskButtonClick(Sender: TFtButton);
   public
     constructor Create(ALauncher: TShellLauncher = nil);
     destructor Destroy(); override;
@@ -102,9 +106,9 @@ type
     property IsVisible     : Boolean         read FIsVisible;
     property ActiveWindow  : Cardinal        read FActiveWindow;
     property TaskCount     : Integer         read GetTaskCount;
-    property WindowWidget  : FtWidget        read FWindow;
-    property LauncherWidget: FtWidget        read FLauncherBtn;
-    property ClockWidget   : FtWidget        read FClockText;
+    property WindowWidget  : TFtWindow       read FWindow;
+    property LauncherWidget: TFtButton       read FLauncherBtn;
+    property ClockWidget   : TFtLabel        read FClockText;
   end;
 
 var
@@ -130,31 +134,10 @@ begin
   end;
 end;
 
-procedure LauncherButtonClick(widget: FtWidget; user_data: Pointer); cdecl;
-begin
-  if Assigned(GBottomPanelInstance) then
-    GBottomPanelInstance.OnLauncherClicked();
-end;
-
-procedure ShowDesktopButtonClick(widget: FtWidget; user_data: Pointer); cdecl;
-begin
-  if Assigned(GBottomPanelInstance) then
-    GBottomPanelInstance.ToggleShowDesktop();
-end;
-
-procedure TaskButtonClick(widget: FtWidget; user_data: Pointer); cdecl;
-var
-  winId: Cardinal;
-begin
-  winId := Cardinal(PtrUInt(user_data));
-  if Assigned(GBottomPanelInstance) and (winId <> 0) then
-    GBottomPanelInstance.OnTaskClicked(winId);
-end;
-
 procedure PanelTickCallback(user_data: Pointer); cdecl;
 begin
-  if Assigned(GBottomPanelInstance) then
-    GBottomPanelInstance.Tick();
+  if Assigned(user_data) then
+    TShellBottomPanel(user_data).Tick();
 end;
 
 // -----------------------------------------------------------------------------
@@ -173,12 +156,12 @@ begin
   FLastActiveWin := 0;
   FActiveWindow := 0;
 
-  if IsLibFtLoaded() and Assigned(ft_screen_get_width) then
-    FPanelWidth := ft_screen_get_width()
+  if FtIsLibLoaded() and Assigned(ft_screen_get_width) then
+    FPanelWidth := FtApp().ScreenWidth
   else
     FPanelWidth := 1920;
 
-  if IsLibFtLoaded() and Assigned(ft_backend_get_connection) then
+  if FtIsLibLoaded() and Assigned(ft_backend_get_connection) then
   begin
     FConn := Pxcb_connection_t(ft_backend_get_connection());
     FScreen := Pxcb_screen_t(ft_backend_get_screen());
@@ -191,7 +174,7 @@ begin
   InitAtoms();
   SetupWindow();
 
-  if IsLibFtLoaded() and Assigned(ft_set_tick_callback) then
+  if FtIsLibLoaded() and Assigned(ft_set_tick_callback) then
     ft_set_tick_callback(@PanelTickCallback, Self);
 end;
 
@@ -202,17 +185,45 @@ begin
   if GBottomPanelInstance = Self then
     GBottomPanelInstance := nil;
 
-  if IsLibFtLoaded() and Assigned(ft_set_tick_callback) then
+  if FtIsLibLoaded() and Assigned(ft_set_tick_callback) then
     ft_set_tick_callback(nil, nil);
 
   for i := 0 to High(FTasks) do
   begin
-    if Assigned(FTasks[i].Button) and Assigned(ft_widget_destroy) then
-      ft_widget_destroy(FTasks[i].Button);
+    if Assigned(FTasks[i].Button) then
+    begin
+      FTasks[i].Button.Free();
+      FTasks[i].Button := nil;
+    end;
   end;
   SetLength(FTasks, 0);
 
+  if Assigned(FWindow) then
+  begin
+    FWindow.Free();
+    FWindow := nil;
+    FLauncherBtn := nil;
+    FClockText := nil;
+    FShowDesktopBtn := nil;
+  end;
+
   inherited Destroy();
+end;
+
+procedure TShellBottomPanel.HandleLauncherButtonClick(Sender: TFtButton);
+begin
+  OnLauncherClicked();
+end;
+
+procedure TShellBottomPanel.HandleShowDesktopButtonClick(Sender: TFtButton);
+begin
+  ToggleShowDesktop();
+end;
+
+procedure TShellBottomPanel.HandleTaskButtonClick(Sender: TFtButton);
+begin
+  if Assigned(Sender) and (Sender.Tag <> 0) then
+    OnTaskClicked(Cardinal(Sender.Tag));
 end;
 
 procedure TShellBottomPanel.InitAtoms();
@@ -243,56 +254,38 @@ procedure TShellBottomPanel.SetupWindow();
 var
   py: Integer;
 begin
-  if not IsLibFtLoaded() or not Assigned(ft_window_create) then Exit;
+  if not FtIsLibLoaded() then Exit;
 
   py := PanelY();
-  FWindow := ft_window_create(FPanelWidth, FPanelHeight, 'shellsama-bottom-panel');
+  FWindow := TFtWindow.Create(FPanelWidth, FPanelHeight, 'shellsama-bottom-panel');
   if FWindow = nil then Exit;
 
-  ft_window_set_window_type(FWindow, FT_WINDOW_TYPE_DOCK);
-  ft_window_set_borderless(FWindow, 1);
-  ft_window_set_skip_taskbar(FWindow, 1);
-  ft_window_set_position(FWindow, 0, py);
+  FWindow.WindowType := ftwtDock;
+  FWindow.Borderless := True;
+  FWindow.SkipTaskbar := True;
+  FWindow.SetPosition(0, py);
 
   // Reserve bottom screen space via _NET_WM_STRUT & _NET_WM_STRUT_PARTIAL
-  if Assigned(ft_window_set_strut_partial) then
-    ft_window_set_strut_partial(
-      FWindow,
-      0, 0, 0, FPanelHeight,
-      0, 0, 0, 0, 0, 0,
-      0, FPanelWidth - 1
-    );
+  FWindow.SetStrutPartial(
+    0, 0, 0, FPanelHeight,
+    0, 0, 0, 0, 0, 0,
+    0, FPanelWidth - 1
+  );
 
   // 1. Launcher button on the left
-  if Assigned(ft_button_create) then
-  begin
-    FLauncherBtn := ft_button_create(FWindow, 6, 3, 110, 32, '✦ Samarinda');
-    if Assigned(FLauncherBtn) then
-    begin
-      ft_button_set_toggle(FLauncherBtn, 1);
-      ft_button_set_corner_radius(FLauncherBtn, 6.0);
-      ft_button_on_click(FLauncherBtn, @LauncherButtonClick, Self);
-    end;
-  end;
+  FLauncherBtn := TFtButton.Create(FWindow, 6, 3, 110, 32, '✦ Samarinda');
+  FLauncherBtn.IsToggle := True;
+  FLauncherBtn.CornerRadius := 6.0;
+  FLauncherBtn.OnClick := @HandleLauncherButtonClick;
 
   // 2. Clock text label on the right
-  if Assigned(ft_text_create) then
-  begin
-    FClockText := ft_text_create(FWindow, FPanelWidth - 164, 3, 126, 32, '--:--');
-    if Assigned(FClockText) and Assigned(ft_text_set_alignment) then
-      ft_text_set_alignment(FClockText, FT_TEXT_ALIGN_CENTER);
-  end;
+  FClockText := TFtLabel.Create(FWindow, FPanelWidth - 164, 3, 126, 32, '--:--');
+  FClockText.Alignment := ftaCenter;
 
   // 3. Show Desktop button on the extreme right
-  if Assigned(ft_button_create) then
-  begin
-    FShowDesktopBtn := ft_button_create(FWindow, FPanelWidth - 34, 3, 28, 32, '▤');
-    if Assigned(FShowDesktopBtn) then
-    begin
-      ft_button_set_corner_radius(FShowDesktopBtn, 6.0);
-      ft_button_on_click(FShowDesktopBtn, @ShowDesktopButtonClick, Self);
-    end;
-  end;
+  FShowDesktopBtn := TFtButton.Create(FWindow, FPanelWidth - 34, 3, 28, 32, '▤');
+  FShowDesktopBtn.CornerRadius := 6.0;
+  FShowDesktopBtn.OnClick := @HandleShowDesktopButtonClick;
 
   UpdateClock();
   RefreshTasks();
@@ -307,8 +300,8 @@ function TShellBottomPanel.PanelY(): Integer;
 var
   sh: Integer;
 begin
-  if IsLibFtLoaded() and Assigned(ft_screen_get_height) then
-    sh := ft_screen_get_height()
+  if FtIsLibLoaded() and Assigned(ft_screen_get_height) then
+    sh := FtApp().ScreenHeight
   else
     sh := 1080;
   Result := sh - FPanelHeight;
@@ -332,7 +325,7 @@ end;
 procedure TShellBottomPanel.Show();
 begin
   if FWindow = nil then Exit;
-  ft_widget_show(FWindow);
+  FWindow.Show();
   FIsVisible := True;
   RefreshTasks();
   UpdateClock();
@@ -341,7 +334,7 @@ end;
 procedure TShellBottomPanel.Hide();
 begin
   if FWindow = nil then Exit;
-  ft_widget_hide(FWindow);
+  FWindow.Hide();
   FIsVisible := False;
 end;
 
@@ -398,39 +391,49 @@ var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
   len: Integer;
+  pStr: PChar;
 begin
   Result := '';
   if (FConn = nil) or (AWin = 0) then Exit;
 
-  // Try _NET_WM_NAME (UTF-8)
+  // 1. Try _NET_WM_NAME (UTF8_STRING)
   if (FAtomNetWmName <> 0) and (FAtomUtf8String <> 0) then
   begin
     cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmName, FAtomUtf8String, 0, 256);
     reply := xcb_get_property_reply(FConn, cookie, nil);
     if reply <> nil then
     begin
-      len := xcb_get_property_value_length(reply);
-      if len > 0 then
-      begin
-        SetString(Result, PAnsiChar(xcb_get_property_value(reply)), len);
+      try
+        len := xcb_get_property_value_length(reply);
+        if len > 0 then
+        begin
+          pStr := PChar(xcb_get_property_value(reply));
+          SetString(Result, pStr, len);
+          Exit;
+        end;
+      finally
         c_free(reply);
-        Exit;
       end;
-      c_free(reply);
     end;
   end;
 
-  // Fallback to WM_NAME (ISO-8859-1 or ASCII)
+  // 2. Fallback to WM_NAME (STRING)
   if FAtomWMName <> 0 then
   begin
     cookie := xcb_get_property(FConn, 0, AWin, FAtomWMName, XCB_ATOM_STRING, 0, 256);
     reply := xcb_get_property_reply(FConn, cookie, nil);
     if reply <> nil then
     begin
-      len := xcb_get_property_value_length(reply);
-      if len > 0 then
-        SetString(Result, PAnsiChar(xcb_get_property_value(reply)), len);
-      c_free(reply);
+      try
+        len := xcb_get_property_value_length(reply);
+        if len > 0 then
+        begin
+          pStr := PChar(xcb_get_property_value(reply));
+          SetString(Result, pStr, len);
+        end;
+      finally
+        c_free(reply);
+      end;
     end;
   end;
 end;
@@ -441,26 +444,19 @@ var
   reply: Pxcb_get_property_reply_t;
   atoms: Pxcb_atom_t;
   count, i: Integer;
-  panelWin: Cardinal;
 begin
-  Result := False;
-  if (FConn = nil) or (AWin = 0) then Exit;
+  if (FConn = nil) or (AWin = 0) then Exit(False);
 
-  // Exclude panel window itself
-  if Assigned(FWindow) and Assigned(ft_window_get_native_handle) then
-  begin
-    panelWin := Cardinal(PtrUInt(ft_window_get_native_handle(FWindow)));
-    if AWin = panelWin then Exit(False);
-  end;
+  // 1. Exclude self panel window
+  if Assigned(FWindow) and (AWin = Cardinal(PtrUInt(FWindow.NativeHandle))) then
+    Exit(False);
 
-  // Exclude launcher window if open
-  if Assigned(FLauncher) and Assigned(FLauncher.Window) and Assigned(ft_window_get_native_handle) then
-  begin
-    panelWin := Cardinal(PtrUInt(ft_window_get_native_handle(FLauncher.Window)));
-    if AWin = panelWin then Exit(False);
-  end;
+  // 2. Exclude launcher window if active
+  if Assigned(FLauncher) and Assigned(FLauncher.Window) and
+     (AWin = Cardinal(PtrUInt(FLauncher.Window.NativeHandle))) then
+    Exit(False);
 
-  // Check _NET_WM_STATE for SKIP_TASKBAR
+  // 3. Check _NET_WM_STATE for _NET_WM_STATE_SKIP_TASKBAR
   if (FAtomNetWmState <> 0) and (FAtomNetWmStateSkipTaskbar <> 0) then
   begin
     cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmState, XCB_ATOM_ATOM, 0, 64);
@@ -484,10 +480,10 @@ begin
     end;
   end;
 
-  // Check _NET_WM_WINDOW_TYPE
-  if (FAtomNetWmWindowType <> 0) then
+  // 4. Check _NET_WM_WINDOW_TYPE (ignore docks, desktop, splash, utilities, toolbars, menus, tooltips)
+  if FAtomNetWmWindowType <> 0 then
   begin
-    cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmWindowType, XCB_ATOM_ATOM, 0, 64);
+    cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmWindowType, XCB_ATOM_ATOM, 0, 16);
     reply := xcb_get_property_reply(FConn, cookie, nil);
     if reply <> nil then
     begin
@@ -551,7 +547,7 @@ procedure TShellBottomPanel.RefreshTasks();
 var
   rawWins: array of Cardinal;
   validWins: array of Cardinal;
-  i, j, n: Integer;
+  i, j: Integer;
   title: string;
   found: Boolean;
   oldTasks: array of TTaskItem;
@@ -606,8 +602,11 @@ begin
   // Destroy remaining unused buttons
   for j := 0 to High(oldTasks) do
   begin
-    if Assigned(oldTasks[j].Button) and Assigned(ft_widget_destroy) then
-      ft_widget_destroy(oldTasks[j].Button);
+    if Assigned(oldTasks[j].Button) then
+    begin
+      oldTasks[j].Button.Free();
+      oldTasks[j].Button := nil;
+    end;
   end;
 
   LayoutButtons();
@@ -639,32 +638,19 @@ begin
 
     if FTasks[i].Button = nil then
     begin
-      if Assigned(ft_button_create) then
-      begin
-        FTasks[i].Button := ft_button_create(FWindow, btnX, 3, btnW, 32, PChar(dispTitle));
-        if Assigned(FTasks[i].Button) then
-        begin
-          ft_button_set_toggle(FTasks[i].Button, 1);
-          ft_button_set_corner_radius(FTasks[i].Button, 6.0);
-          ft_button_on_click(FTasks[i].Button, @TaskButtonClick, Pointer(PtrUInt(FTasks[i].Window)));
-        end;
-      end;
+      FTasks[i].Button := TFtButton.Create(FWindow, btnX, 3, btnW, 32, dispTitle);
+      FTasks[i].Button.IsToggle := True;
+      FTasks[i].Button.CornerRadius := 6.0;
+      FTasks[i].Button.Tag := PtrInt(FTasks[i].Window);
+      FTasks[i].Button.OnClick := @HandleTaskButtonClick;
     end
     else
     begin
-      if Assigned(ft_widget_set_bounds) then
-        ft_widget_set_bounds(FTasks[i].Button, btnX, 3, btnW, 32);
-      if Assigned(ft_button_set_caption) then
-        ft_button_set_caption(FTasks[i].Button, PChar(dispTitle));
+      FTasks[i].Button.SetBounds(btnX, 3, btnW, 32);
+      FTasks[i].Button.Caption := dispTitle;
     end;
 
-    if Assigned(FTasks[i].Button) and Assigned(ft_button_set_toggled) then
-    begin
-      if FTasks[i].IsActive then
-        ft_button_set_toggled(FTasks[i].Button, 1)
-      else
-        ft_button_set_toggled(FTasks[i].Button, 0);
-    end;
+    FTasks[i].Button.Toggled := FTasks[i].IsActive;
   end;
 end;
 
@@ -680,8 +666,8 @@ begin
   FLastClockSec := sec;
 
   timeStr := FormatDateTime('hh:nn:ss', dt);
-  if Assigned(FClockText) and Assigned(ft_text_set_text) then
-    ft_text_set_text(FClockText, PChar(timeStr));
+  if Assigned(FClockText) then
+    FClockText.Text := timeStr;
 end;
 
 procedure TShellBottomPanel.Tick();
@@ -691,8 +677,8 @@ begin
   UpdateClock();
 
   // Sync launcher button toggled state
-  if Assigned(FLauncherBtn) and Assigned(FLauncher) and Assigned(ft_button_set_toggled) then
-    ft_button_set_toggled(FLauncherBtn, Ord(FLauncher.IsVisible));
+  if Assigned(FLauncherBtn) and Assigned(FLauncher) then
+    FLauncherBtn.Toggled := FLauncher.IsVisible;
 
   // Check if active window changed
   curActive := QueryActiveWindow();
@@ -708,8 +694,8 @@ begin
   if Assigned(FLauncher) then
   begin
     FLauncher.Toggle();
-    if Assigned(FLauncherBtn) and Assigned(ft_button_set_toggled) then
-      ft_button_set_toggled(FLauncherBtn, Ord(FLauncher.IsVisible));
+    if Assigned(FLauncherBtn) then
+      FLauncherBtn.Toggled := FLauncher.IsVisible;
   end;
 end;
 
