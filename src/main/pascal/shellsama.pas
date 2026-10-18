@@ -7,7 +7,7 @@ program shellsama;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, Classes,
+  SysUtils, Classes, Math,
   ftpas, ftpas.api,
   ShellSama.Panel,
   ShellSama.DesktopApps,
@@ -23,6 +23,7 @@ var
   i: Integer;
   arg: string;
 begin
+  SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide, exOverflow, exUnderflow, exPrecision]);
   WriteLn('shellsama — Samarinda Desktop Shell');
 
   AutoShowLauncher := False;
