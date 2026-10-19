@@ -707,11 +707,13 @@ begin
   themes[2] := 'hicolor';
 
   if APreferredSize <= 24 then
-    sizes := ['24x24', '22x22', '32x32', 'scalable', '48x48', '16x16', '64x64', '128x128', '256x256']
+    sizes := ['24x24', '22x22', '16x16', '32x32', '48x48', '64x64', '128x128', '256x256', '512x512', 'scalable']
   else if APreferredSize <= 32 then
-    sizes := ['32x32', '24x24', '48x48', 'scalable', '64x64', '16x16', '128x128', '256x256']
+    sizes := ['32x32', '24x24', '48x48', '22x22', '16x16', '64x64', '128x128', '256x256', '512x512', 'scalable']
+  else if APreferredSize <= 48 then
+    sizes := ['48x48', '32x32', '64x64', '24x24', '128x128', '256x256', '512x512', 'scalable', '16x16']
   else
-    sizes := ['48x48', 'scalable', '64x64', '32x32', '128x128', '256x256', '24x24', '16x16'];
+    sizes := ['128x128', '256x256', '512x512', '64x64', '48x48', 'scalable', '32x32', '24x24', '16x16'];
 
   cats[0] := 'apps';
   cats[1] := 'places';

@@ -409,6 +409,11 @@ begin
   Resolved := ResolveIconPath('io.github.celluloid_player.Celluloid', 24);
   if FileExists('/usr/share/icons/Yaru/24x24/apps/io.github.celluloid_player.Celluloid.png') then
     AssertEquals('Celluloid should resolve', '/usr/share/icons/Yaru/24x24/apps/io.github.celluloid_player.Celluloid.png', Resolved);
+
+  Resolved := ResolveIconPath('com.obsproject.Studio', 20);
+  if FileExists('/usr/share/icons/hicolor/128x128/apps/com.obsproject.Studio.png') then
+    AssertEquals('OBS Studio should resolve to 128x128 PNG before scalable',
+      '/usr/share/icons/hicolor/128x128/apps/com.obsproject.Studio.png', Resolved);
 end;
 
 procedure TDesktopAppsTest.TestFindAppByClass();
