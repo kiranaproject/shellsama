@@ -685,6 +685,14 @@ begin
         GIconPathCache.Values[cacheKey] := Result;
       Exit;
     end;
+    testPath := '/usr/share/pixmaps/' + trimmedName + '.svgz';
+    if FileExists(testPath) then
+    begin
+      Result := testPath;
+      if GIconPathCache <> nil then
+        GIconPathCache.Values[cacheKey] := Result;
+      Exit;
+    end;
     testPath := '/usr/share/pixmaps/' + trimmedName + '.xpm';
     if FileExists(testPath) then
     begin
@@ -706,7 +714,9 @@ begin
   themes[1] := 'Adwaita';
   themes[2] := 'hicolor';
 
-  if APreferredSize <= 24 then
+  if (Pos('display-im', LowerCase(trimmedName)) > 0) or (Pos('imagemagick', LowerCase(trimmedName)) > 0) then
+    sizes := ['scalable', '512x512', '256x256', '128x128', '64x64', '48x48', '32x32', '24x24', '16x16']
+  else if APreferredSize <= 24 then
     sizes := ['24x24', '22x22', '16x16', '32x32', '48x48', '64x64', '128x128', '256x256', '512x512', 'scalable']
   else if APreferredSize <= 32 then
     sizes := ['32x32', '24x24', '48x48', '22x22', '16x16', '64x64', '128x128', '256x256', '512x512', 'scalable']
@@ -726,7 +736,7 @@ begin
   if HasValidIconExtension(trimmedName) then
     exts := ['']
   else
-    exts := ['.png', '.svg', '.xpm'];
+    exts := ['.png', '.svg', '.svgz', '.xpm'];
 
   for bIdx := 0 to High(baseDirs) do
   begin

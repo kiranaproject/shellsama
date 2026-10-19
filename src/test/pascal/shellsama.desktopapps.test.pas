@@ -414,6 +414,11 @@ begin
   if FileExists('/usr/share/icons/hicolor/128x128/apps/com.obsproject.Studio.png') then
     AssertEquals('OBS Studio should resolve to 128x128 PNG before scalable',
       '/usr/share/icons/hicolor/128x128/apps/com.obsproject.Studio.png', Resolved);
+
+  Resolved := ResolveIconPath('display-im7.q16', 20);
+  if FileExists('/usr/share/icons/hicolor/scalable/apps/display-im7.q16.svgz') then
+    AssertEquals('ImageMagick should resolve to scalable SVGZ with transparent background',
+      '/usr/share/icons/hicolor/scalable/apps/display-im7.q16.svgz', Resolved);
 end;
 
 procedure TDesktopAppsTest.TestFindAppByClass();
