@@ -606,6 +606,14 @@ end;
 var
   GIconPathCache: TStringList = nil;
 
+function HasValidIconExtension(const AName: string): Boolean;
+var
+  ext: string;
+begin
+  ext := LowerCase(ExtractFileExt(AName));
+  Result := (ext = '.png') or (ext = '.svg') or (ext = '.xpm') or (ext = '.svgz') or (ext = '.ico');
+end;
+
 function ResolveIconPath(const AIconName: string; const APreferredSize: Integer = 48): string;
 var
   cacheKey: string;
@@ -648,7 +656,7 @@ begin
   end;
 
   // 2. Check /usr/share/pixmaps/
-  if ExtractFileExt(trimmedName) <> '' then
+  if HasValidIconExtension(trimmedName) then
   begin
     testPath := '/usr/share/pixmaps/' + trimmedName;
     if FileExists(testPath) then
@@ -713,7 +721,7 @@ begin
   cats[5] := 'actions';
   cats[6] := '';
 
-  if ExtractFileExt(trimmedName) <> '' then
+  if HasValidIconExtension(trimmedName) then
     exts := ['']
   else
     exts := ['.png', '.svg', '.xpm'];

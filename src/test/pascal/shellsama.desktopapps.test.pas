@@ -397,10 +397,18 @@ begin
     DeleteFile(TmpIconPath);
   end;
 
-  // 3. Known system icon or pixmap resolution
   Resolved := ResolveIconPath('system-file-manager', 24);
   if Resolved <> '' then
     AssertTrue('Resolved path must exist', FileExists(Resolved));
+
+  // 4. Reverse-DNS icon names without extension (GNOME / Flatpak style)
+  Resolved := ResolveIconPath('org.gnome.DejaDup', 24);
+  if FileExists('/usr/share/icons/Yaru/24x24/apps/org.gnome.DejaDup.png') then
+    AssertEquals('org.gnome.DejaDup should resolve', '/usr/share/icons/Yaru/24x24/apps/org.gnome.DejaDup.png', Resolved);
+
+  Resolved := ResolveIconPath('io.github.celluloid_player.Celluloid', 24);
+  if FileExists('/usr/share/icons/Yaru/24x24/apps/io.github.celluloid_player.Celluloid.png') then
+    AssertEquals('Celluloid should resolve', '/usr/share/icons/Yaru/24x24/apps/io.github.celluloid_player.Celluloid.png', Resolved);
 end;
 
 procedure TDesktopAppsTest.TestFindAppByClass();
