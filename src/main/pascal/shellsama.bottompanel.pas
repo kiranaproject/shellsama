@@ -11,6 +11,7 @@ uses
   Classes, SysUtils, Math,
   Floria.XCB,
   ftpas.api, ftpas.types, ftpas,
+  ShellSama.DesktopApps,
   ShellSama.Launcher;
 
 type
@@ -18,6 +19,11 @@ type
   TCardinalArray = array[0..4] of Cardinal;
 
   TWindowIdArray = array of Cardinal;
+
+  TWindowIconItem = record
+    Window: Cardinal;
+    Bitmap: TFtBitmap;
+  end;
 
   TTaskItem = record
     Window     : Cardinal;
@@ -53,6 +59,7 @@ type
     FAtomNetClientList        : Cardinal;
     FAtomNetActiveWindow      : Cardinal;
     FAtomNetWmName            : Cardinal;
+    FAtomNetWmIcon            : Cardinal;
     FAtomNetWmState           : Cardinal;
     FAtomNetWmStateHidden     : Cardinal;
     FAtomNetWmStateSkipTaskbar: Cardinal;
@@ -68,6 +75,10 @@ type
     FAtomUtf8String           : Cardinal;
     FAtomWMChangeState        : Cardinal;
     FAtomWMName               : Cardinal;
+    FAtomWMClass              : Cardinal;
+
+    // Window icon cache
+    FWindowIconCache          : array of TWindowIconItem;
 
     procedure InitAtoms();
     procedure SetupWindow();
@@ -91,6 +102,9 @@ type
     procedure UpdateClock();
     procedure Tick();
 
+    function QueryWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
+    function GetOrLoadWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
+
     procedure ActivateWindow(AWin: Cardinal);
     procedure MinimizeWindow(AWin: Cardinal);
     procedure ToggleShowDesktop();
@@ -102,10 +116,13 @@ type
     function PanelWidth(): Integer;
     function PanelHeight(): Integer;
     function GetTaskCount(): Integer;
+    function GetIconCacheCount(): Integer;
+    function GetTaskIcon(AIndex: Integer): TFtBitmap;
 
     property IsVisible     : Boolean         read FIsVisible;
     property ActiveWindow  : Cardinal        read FActiveWindow;
     property TaskCount     : Integer         read GetTaskCount;
+    property IconCacheCount: Integer         read GetIconCacheCount;
     property WindowWidget  : TFtWindow       read FWindow;
     property LauncherWidget: TFtButton       read FLauncherBtn;
     property ClockWidget   : TFtLabel        read FClockText;
@@ -173,6 +190,7 @@ begin
 
   InitAtoms();
   SetupWindow();
+  SetLength(FWindowIconCache, 0);
 
   if FtIsLibLoaded() and Assigned(ft_set_tick_callback) then
     ft_set_tick_callback(@PanelTickCallback, Self);
@@ -197,6 +215,16 @@ begin
     end;
   end;
   SetLength(FTasks, 0);
+
+  for i := 0 to High(FWindowIconCache) do
+  begin
+    if Assigned(FWindowIconCache[i].Bitmap) then
+    begin
+      FWindowIconCache[i].Bitmap.Free();
+      FWindowIconCache[i].Bitmap := nil;
+    end;
+  end;
+  SetLength(FWindowIconCache, 0);
 
   if Assigned(FWindow) then
   begin
@@ -233,6 +261,7 @@ begin
   FAtomNetClientList         := InternAtom(FConn, '_NET_CLIENT_LIST');
   FAtomNetActiveWindow       := InternAtom(FConn, '_NET_ACTIVE_WINDOW');
   FAtomNetWmName             := InternAtom(FConn, '_NET_WM_NAME');
+  FAtomNetWmIcon             := InternAtom(FConn, '_NET_WM_ICON');
   FAtomNetWmState            := InternAtom(FConn, '_NET_WM_STATE');
   FAtomNetWmStateHidden      := InternAtom(FConn, '_NET_WM_STATE_HIDDEN');
   FAtomNetWmStateSkipTaskbar := InternAtom(FConn, '_NET_WM_STATE_SKIP_TASKBAR');
@@ -248,6 +277,7 @@ begin
   FAtomUtf8String            := InternAtom(FConn, 'UTF8_STRING');
   FAtomWMChangeState         := InternAtom(FConn, 'WM_CHANGE_STATE');
   FAtomWMName                := InternAtom(FConn, 'WM_NAME');
+  FAtomWMClass               := InternAtom(FConn, 'WM_CLASS');
 end;
 
 procedure TShellBottomPanel.SetupWindow();
@@ -320,6 +350,18 @@ end;
 function TShellBottomPanel.GetTaskCount(): Integer;
 begin
   Result := Length(FTasks);
+end;
+
+function TShellBottomPanel.GetIconCacheCount(): Integer;
+begin
+  Result := Length(FWindowIconCache);
+end;
+
+function TShellBottomPanel.GetTaskIcon(AIndex: Integer): TFtBitmap;
+begin
+  Result := nil;
+  if (AIndex >= 0) and (AIndex < Length(FTasks)) then
+    Result := GetOrLoadWindowIcon(FTasks[AIndex].Window, 18);
 end;
 
 procedure TShellBottomPanel.Show();
@@ -436,6 +478,195 @@ begin
       end;
     end;
   end;
+end;
+
+function TShellBottomPanel.QueryWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
+var
+  cookie: xcb_get_property_cookie_t;
+  reply: Pxcb_get_property_reply_t;
+  pData: PCardinal;
+  valLen, numCards, offset, w, h, iconLen: Integer;
+  bestW, bestH, bestOffset: Integer;
+  candFound: Boolean;
+  rawBmp: TFtBitmap;
+  resName, resClass, iconPath: string;
+  pStr, pNext: PChar;
+  strLen: Integer;
+  desktopApp: TDesktopApp;
+begin
+  Result := nil;
+  if not FtIsLibLoaded() then Exit;
+
+  // 1. Try _NET_WM_ICON
+  if (FConn <> nil) and (AWin <> 0) and (FAtomNetWmIcon <> 0) then
+  begin
+    cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmIcon, XCB_ATOM_CARDINAL, 0, 131072);
+    reply := xcb_get_property_reply(FConn, cookie, nil);
+    if reply <> nil then
+    begin
+      try
+        valLen := xcb_get_property_value_length(reply);
+        numCards := valLen div SizeOf(Cardinal);
+        if numCards >= 2 then
+        begin
+          pData := PCardinal(xcb_get_property_value(reply));
+          offset := 0;
+          candFound := False;
+          bestW := 0;
+          bestH := 0;
+          bestOffset := 0;
+
+          while offset + 2 <= numCards do
+          begin
+            w := Integer(pData[offset]);
+            h := Integer(pData[offset + 1]);
+            if (w <= 0) or (h <= 0) or (w > 1024) or (h > 1024) then Break;
+            iconLen := w * h;
+            if (offset + 2 + iconLen > numCards) or (iconLen < 0) then Break;
+
+            if (w = APreferredSize) and (h = APreferredSize) then
+            begin
+              candFound := True;
+              bestW := w;
+              bestH := h;
+              bestOffset := offset;
+              Break;
+            end;
+
+            if not candFound then
+            begin
+              candFound := True;
+              bestW := w;
+              bestH := h;
+              bestOffset := offset;
+            end
+            else if bestW < APreferredSize then
+            begin
+              if (w >= APreferredSize) or (w > bestW) then
+              begin
+                bestW := w;
+                bestH := h;
+                bestOffset := offset;
+              end;
+            end
+            else
+            begin
+              if (w >= APreferredSize) and (w < bestW) then
+              begin
+                bestW := w;
+                bestH := h;
+                bestOffset := offset;
+              end;
+            end;
+
+            Inc(offset, 2 + iconLen);
+          end;
+
+          if candFound and (bestW > 0) and (bestH > 0) then
+          begin
+            try
+              rawBmp := TFtBitmap.CreateFromBGRA(@pData[bestOffset + 2], bestW, bestH);
+              if Assigned(rawBmp) then
+              begin
+                if (bestW = APreferredSize) and (bestH = APreferredSize) then
+                  Result := rawBmp
+                else
+                begin
+                  Result := rawBmp.CreateScaled(APreferredSize, APreferredSize);
+                  rawBmp.Free();
+                end;
+              end;
+            except
+              Result := nil;
+            end;
+            if Result <> nil then Exit;
+          end;
+        end;
+      finally
+        c_free(reply);
+      end;
+    end;
+  end;
+
+  // 2. Try WM_CLASS match to desktop apps / pixmaps
+  if (FConn <> nil) and (AWin <> 0) then
+  begin
+    cookie := xcb_get_property(FConn, 0, AWin, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 0, 256);
+    reply := xcb_get_property_reply(FConn, cookie, nil);
+    if reply <> nil then
+    begin
+      try
+        strLen := xcb_get_property_value_length(reply);
+        if strLen > 0 then
+        begin
+          pStr := PChar(xcb_get_property_value(reply));
+          resName := StrPas(pStr);
+          resClass := '';
+          pNext := pStr + Length(resName) + 1;
+          if (pNext - pStr) < strLen then
+            resClass := StrPas(pNext);
+
+          // A. Match against TDesktopAppList
+          if Assigned(FLauncher) and Assigned(FLauncher.AppList) then
+          begin
+            if FLauncher.AppList.FindAppByClass(resName, resClass, desktopApp) then
+            begin
+              if desktopApp.Icon <> '' then
+              begin
+                iconPath := ResolveIconPath(desktopApp.Icon, APreferredSize);
+                if iconPath <> '' then
+                  Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
+              end;
+            end;
+          end;
+
+          // B. Direct name resolution from resName
+          if (Result = nil) and (resName <> '') then
+          begin
+            iconPath := ResolveIconPath(LowerCase(resName), APreferredSize);
+            if iconPath <> '' then
+              Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
+          end;
+
+          // C. Direct name resolution from resClass
+          if (Result = nil) and (resClass <> '') then
+          begin
+            iconPath := ResolveIconPath(LowerCase(resClass), APreferredSize);
+            if iconPath <> '' then
+              Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
+          end;
+        end;
+      finally
+        c_free(reply);
+      end;
+    end;
+  end;
+
+  // 3. Fallback generic window icon
+  if Result = nil then
+    Result := CreateFallbackIcon(APreferredSize, APreferredSize);
+end;
+
+function TShellBottomPanel.GetOrLoadWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
+var
+  i: Integer;
+begin
+  Result := nil;
+  if AWin = 0 then Exit;
+
+  for i := 0 to High(FWindowIconCache) do
+  begin
+    if FWindowIconCache[i].Window = AWin then
+    begin
+      Result := FWindowIconCache[i].Bitmap;
+      Exit;
+    end;
+  end;
+
+  Result := QueryWindowIcon(AWin, APreferredSize);
+  SetLength(FWindowIconCache, Length(FWindowIconCache) + 1);
+  FWindowIconCache[High(FWindowIconCache)].Window := AWin;
+  FWindowIconCache[High(FWindowIconCache)].Bitmap := Result;
 end;
 
 function TShellBottomPanel.ShouldShowTask(AWin: Cardinal): Boolean;
@@ -609,6 +840,31 @@ begin
     end;
   end;
 
+  // Evict stale entries from icon cache
+  i := 0;
+  while i < Length(FWindowIconCache) do
+  begin
+    found := False;
+    for j := 0 to High(validWins) do
+    begin
+      if validWins[j] = FWindowIconCache[i].Window then
+      begin
+        found := True;
+        Break;
+      end;
+    end;
+    if not found then
+    begin
+      if Assigned(FWindowIconCache[i].Bitmap) then
+        FWindowIconCache[i].Bitmap.Free();
+      for j := i to Length(FWindowIconCache) - 2 do
+        FWindowIconCache[j] := FWindowIconCache[j + 1];
+      SetLength(FWindowIconCache, Length(FWindowIconCache) - 1);
+    end
+    else
+      Inc(i);
+  end;
+
   LayoutButtons();
 end;
 
@@ -617,6 +873,7 @@ var
   startX, endX, availW, numTasks: Integer;
   btnW, btnX, i: Integer;
   dispTitle: string;
+  iconBmp: TFtBitmap;
 begin
   if FWindow = nil then Exit;
 
@@ -636,6 +893,8 @@ begin
     if Length(dispTitle) > 22 then
       dispTitle := Copy(dispTitle, 1, 20) + '..';
 
+    iconBmp := GetOrLoadWindowIcon(FTasks[i].Window, 18);
+
     if FTasks[i].Button = nil then
     begin
       FTasks[i].Button := TFtButton.Create(FWindow, btnX, 3, btnW, 32, dispTitle);
@@ -649,6 +908,15 @@ begin
       FTasks[i].Button.SetBounds(btnX, 3, btnW, 32);
       FTasks[i].Button.Caption := dispTitle;
     end;
+
+    if Assigned(iconBmp) then
+    begin
+      FTasks[i].Button.SetIconBitmap(iconBmp, False);
+      FTasks[i].Button.SetIconSize(18, 18);
+      FTasks[i].Button.IconGap := 6;
+    end
+    else
+      FTasks[i].Button.ClearIcon();
 
     FTasks[i].Button.Toggled := FTasks[i].IsActive;
   end;

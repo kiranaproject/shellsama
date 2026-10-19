@@ -25,6 +25,7 @@ type
     procedure TestClockUpdate();
     procedure TestLauncherSync();
     procedure TestTickExecution();
+    procedure TestWindowIconQueryAndCache();
   end;
 
 implementation
@@ -120,6 +121,22 @@ begin
   // Tick should handle clock and task checks gracefully
   FPanel.Tick();
   AssertNotNull('Panel remains valid after Tick', FPanel);
+end;
+
+procedure TBottomPanelTest.TestWindowIconQueryAndCache();
+var
+  fallbackBmp: TFtBitmap;
+begin
+  // Query for a non-existent or 0 window returns fallback icon
+  fallbackBmp := FPanel.QueryWindowIcon(0, 18);
+  AssertNotNull('QueryWindowIcon(0) should return fallback icon', fallbackBmp);
+  AssertEquals('Fallback icon width is 18', 18, fallbackBmp.Width);
+  AssertEquals('Fallback icon height is 18', 18, fallbackBmp.Height);
+  fallbackBmp.Free();
+
+  // Calling RefreshTasks updates tasks and layout without exception
+  FPanel.RefreshTasks();
+  AssertTrue('Icon cache count >= 0', FPanel.IconCacheCount >= 0);
 end;
 
 initialization

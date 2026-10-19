@@ -8,7 +8,7 @@ unit ShellSama.DesktopApps;
 interface
 
 uses
-  Classes, SysUtils;
+  Classes, SysUtils, ftpas.api, ftpas;
 
 type
   TDesktopApp = record
@@ -16,13 +16,15 @@ type
     Name       : string;   // Name= field
     Exec       : string;   // Exec= field (cleaned, field codes stripped)
     Comment    : string;   // Comment= field
-    Categories : string;   // Categories= field
-    NoDisplay  : Boolean;  // NoDisplay= field
-    Hidden     : Boolean;  // Hidden= field
-    OnlyShowIn : string;   // OnlyShowIn= field
-    NotShowIn  : string;   // NotShowIn= field
-    Terminal   : Boolean;  // Terminal= field
-    FilePath   : string;   // Full path to the .desktop file
+    Icon           : string;   // Icon= field
+    Categories     : string;   // Categories= field
+    NoDisplay      : Boolean;  // NoDisplay= field
+    Hidden         : Boolean;  // Hidden= field
+    OnlyShowIn     : string;   // OnlyShowIn= field
+    NotShowIn      : string;   // NotShowIn= field
+    Terminal       : Boolean;  // Terminal= field
+    StartupWMClass : string;   // StartupWMClass= field
+    FilePath       : string;   // Full path to the .desktop file
   end;
 
   TDesktopAppArray = array of TDesktopApp;
@@ -54,6 +56,9 @@ type
     // Sorted: up to 4 MRU first, then alphabetical
     function Search(const AQuery: string): TDesktopAppArray;
 
+    // Matches window class/name to a desktop app entry
+    function FindAppByClass(const AResName, AResClass: string; out AApp: TDesktopApp): Boolean;
+
     // MRU tracking
     procedure RecordLaunch(const ADesktopId: string);
     procedure LoadRecent();
@@ -66,6 +71,15 @@ type
     property DesktopEnv: string read FDesktopEnv write FDesktopEnv;
     property RecentPath: string read FRecentPath write FRecentPath;
   end;
+
+// Resolves a freedesktop icon name to an absolute file path (.png, .svg, .xpm)
+function ResolveIconPath(const AIconName: string; const APreferredSize: Integer = 48): string;
+
+// Loads and scales an icon bitmap (PNG, SVG, etc.) to requested dimensions
+function LoadIconBitmap(const APath: string; const AWidth, AHeight: Integer): TFtBitmap;
+
+// Creates a crisp default window/app fallback SVG bitmap
+function CreateFallbackIcon(const AWidth, AHeight: Integer): TFtBitmap;
 
 implementation
 
@@ -163,6 +177,8 @@ begin
         AApp.Exec := CleanExecLine(Value)
       else if Key = 'Comment' then
         AApp.Comment := Value
+      else if Key = 'Icon' then
+        AApp.Icon := Value
       else if Key = 'Categories' then
         AApp.Categories := Value
       else if Key = 'NoDisplay' then
@@ -174,7 +190,9 @@ begin
       else if Key = 'NotShowIn' then
         AApp.NotShowIn := Value
       else if Key = 'Terminal' then
-        AApp.Terminal := (LowerCase(Value) = 'true');
+        AApp.Terminal := (LowerCase(Value) = 'true')
+      else if Key = 'StartupWMClass' then
+        AApp.StartupWMClass := Value;
     end;
 
     // Valid if it's an Application type with Name and Exec
@@ -511,5 +529,309 @@ function TDesktopAppList.GetApp(AIndex: Integer): TDesktopApp;
 begin
   Result := FApps[AIndex];
 end;
+
+function TDesktopAppList.FindAppByClass(const AResName, AResClass: string; out AApp: TDesktopApp): Boolean;
+var
+  I: Integer;
+  lowName, lowClass: string;
+  lowExec, lowId: string;
+begin
+  Result := False;
+  FillChar(AApp, SizeOf(AApp), 0);
+  lowName := LowerCase(Trim(AResName));
+  lowClass := LowerCase(Trim(AResClass));
+
+  if (lowName = '') and (lowClass = '') then Exit;
+
+  // 1. Direct DesktopId match: e.g. 'firefox.desktop'
+  for I := 0 to Length(FApps) - 1 do
+  begin
+    lowId := LowerCase(FApps[I].DesktopId);
+    if (lowName <> '') and ((lowId = lowName + '.desktop') or (lowId = lowName)) then
+    begin
+      AApp := FApps[I];
+      Result := True;
+      Exit;
+    end;
+    if (lowClass <> '') and ((lowId = lowClass + '.desktop') or (lowId = lowClass)) then
+    begin
+      AApp := FApps[I];
+      Result := True;
+      Exit;
+    end;
+  end;
+
+  // 2. StartupWMClass match
+  for I := 0 to Length(FApps) - 1 do
+  begin
+    if FApps[I].StartupWMClass <> '' then
+    begin
+      if (lowClass <> '') and (LowerCase(FApps[I].StartupWMClass) = lowClass) then
+      begin
+        AApp := FApps[I];
+        Result := True;
+        Exit;
+      end;
+      if (lowName <> '') and (LowerCase(FApps[I].StartupWMClass) = lowName) then
+      begin
+        AApp := FApps[I];
+        Result := True;
+        Exit;
+      end;
+    end;
+  end;
+
+  // 3. Exec binary name match: e.g. Exec=firefox
+  for I := 0 to Length(FApps) - 1 do
+  begin
+    lowExec := LowerCase(ExtractFileName(FApps[I].Exec));
+    if Pos(' ', lowExec) > 0 then
+      lowExec := Copy(lowExec, 1, Pos(' ', lowExec) - 1);
+
+    if (lowName <> '') and (lowExec = lowName) then
+    begin
+      AApp := FApps[I];
+      Result := True;
+      Exit;
+    end;
+    if (lowClass <> '') and (lowExec = lowClass) then
+    begin
+      AApp := FApps[I];
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+var
+  GIconPathCache: TStringList = nil;
+
+function ResolveIconPath(const AIconName: string; const APreferredSize: Integer = 48): string;
+var
+  cacheKey: string;
+  idx: Integer;
+  trimmedName: string;
+  userHome: string;
+  baseDirs: array[0..3] of string;
+  themes: array[0..2] of string;
+  sizes: array of string;
+  cats: array[0..6] of string;
+  exts: array of string;
+  bIdx, tIdx, sIdx, cIdx, eIdx: Integer;
+  testPath: string;
+begin
+  Result := '';
+  trimmedName := Trim(AIconName);
+  if trimmedName = '' then Exit;
+
+  cacheKey := trimmedName + '@' + IntToStr(APreferredSize);
+  if GIconPathCache <> nil then
+  begin
+    idx := GIconPathCache.IndexOfName(cacheKey);
+    if idx >= 0 then
+    begin
+      Result := GIconPathCache.ValueFromIndex[idx];
+      Exit;
+    end;
+  end;
+
+  // 1. Direct path check
+  if (trimmedName[1] = '/') or (Pos('/', trimmedName) > 0) then
+  begin
+    if FileExists(trimmedName) then
+    begin
+      Result := trimmedName;
+      if GIconPathCache <> nil then
+        GIconPathCache.Values[cacheKey] := Result;
+      Exit;
+    end;
+  end;
+
+  // 2. Check /usr/share/pixmaps/
+  if ExtractFileExt(trimmedName) <> '' then
+  begin
+    testPath := '/usr/share/pixmaps/' + trimmedName;
+    if FileExists(testPath) then
+    begin
+      Result := testPath;
+      if GIconPathCache <> nil then
+        GIconPathCache.Values[cacheKey] := Result;
+      Exit;
+    end;
+  end
+  else
+  begin
+    testPath := '/usr/share/pixmaps/' + trimmedName + '.png';
+    if FileExists(testPath) then
+    begin
+      Result := testPath;
+      if GIconPathCache <> nil then
+        GIconPathCache.Values[cacheKey] := Result;
+      Exit;
+    end;
+    testPath := '/usr/share/pixmaps/' + trimmedName + '.svg';
+    if FileExists(testPath) then
+    begin
+      Result := testPath;
+      if GIconPathCache <> nil then
+        GIconPathCache.Values[cacheKey] := Result;
+      Exit;
+    end;
+    testPath := '/usr/share/pixmaps/' + trimmedName + '.xpm';
+    if FileExists(testPath) then
+    begin
+      Result := testPath;
+      if GIconPathCache <> nil then
+        GIconPathCache.Values[cacheKey] := Result;
+      Exit;
+    end;
+  end;
+
+  // 3. Search icon themes
+  userHome := GetEnvironmentVariable('HOME');
+  baseDirs[0] := userHome + '/.local/share/icons';
+  baseDirs[1] := userHome + '/.icons';
+  baseDirs[2] := '/usr/share/icons';
+  baseDirs[3] := '/usr/local/share/icons';
+
+  themes[0] := 'Yaru';
+  themes[1] := 'Adwaita';
+  themes[2] := 'hicolor';
+
+  if APreferredSize <= 24 then
+    sizes := ['24x24', '22x22', '32x32', 'scalable', '48x48', '16x16', '64x64', '128x128', '256x256']
+  else if APreferredSize <= 32 then
+    sizes := ['32x32', '24x24', '48x48', 'scalable', '64x64', '16x16', '128x128', '256x256']
+  else
+    sizes := ['48x48', 'scalable', '64x64', '32x32', '128x128', '256x256', '24x24', '16x16'];
+
+  cats[0] := 'apps';
+  cats[1] := 'places';
+  cats[2] := 'categories';
+  cats[3] := 'devices';
+  cats[4] := 'status';
+  cats[5] := 'actions';
+  cats[6] := '';
+
+  if ExtractFileExt(trimmedName) <> '' then
+    exts := ['']
+  else
+    exts := ['.png', '.svg', '.xpm'];
+
+  for bIdx := 0 to High(baseDirs) do
+  begin
+    if (baseDirs[bIdx] = '') or not DirectoryExists(baseDirs[bIdx]) then
+      Continue;
+
+    for tIdx := 0 to High(themes) do
+    begin
+      for sIdx := 0 to High(sizes) do
+      begin
+        for cIdx := 0 to High(cats) do
+        begin
+          for eIdx := 0 to High(exts) do
+          begin
+            if cats[cIdx] <> '' then
+              testPath := baseDirs[bIdx] + '/' + themes[tIdx] + '/' + sizes[sIdx] + '/' + cats[cIdx] + '/' + trimmedName + exts[eIdx]
+            else
+              testPath := baseDirs[bIdx] + '/' + themes[tIdx] + '/' + sizes[sIdx] + '/' + trimmedName + exts[eIdx];
+
+            if FileExists(testPath) then
+            begin
+              Result := testPath;
+              if GIconPathCache <> nil then
+                GIconPathCache.Values[cacheKey] := Result;
+              Exit;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+
+  if GIconPathCache <> nil then
+    GIconPathCache.Values[cacheKey] := '';
+end;
+
+function LoadIconBitmap(const APath: string; const AWidth, AHeight: Integer): TFtBitmap;
+var
+  ext: string;
+  rawBmp: TFtBitmap;
+begin
+  Result := nil;
+  if not FtIsLibLoaded() or not FileExists(APath) then Exit;
+  ext := LowerCase(ExtractFileExt(APath));
+  try
+    if (ext = '.svg') or (ext = '.svgz') then
+    begin
+      Result := TFtBitmap.CreateFromSVGFile(APath, AWidth, AHeight);
+      if Assigned(Result) and ((Result.Width = 0) or (Result.Height = 0)) then
+      begin
+        Result.Free();
+        Result := nil;
+      end;
+    end
+    else
+    begin
+      rawBmp := TFtBitmap.CreateFromFile(APath);
+      if Assigned(rawBmp) then
+      begin
+        if (rawBmp.Width > 0) and (rawBmp.Height > 0) then
+        begin
+          if (rawBmp.Width = AWidth) and (rawBmp.Height = AHeight) then
+            Result := rawBmp
+          else
+          begin
+            Result := rawBmp.CreateScaled(AWidth, AHeight);
+            rawBmp.Free();
+          end;
+        end
+        else
+        begin
+          rawBmp.Free();
+          Result := nil;
+        end;
+      end;
+    end;
+  except
+    Result := nil;
+  end;
+end;
+
+const
+  FALLBACK_WINDOW_ICON_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">' +
+    '<rect x="2" y="3" width="16" height="14" rx="2" fill="none" stroke="#94A3B8" stroke-width="1.5"/>' +
+    '<line x1="2" y1="7" x2="18" y2="7" stroke="#94A3B8" stroke-width="1.5"/>' +
+    '<circle cx="5" cy="5" r="0.8" fill="#94A3B8"/>' +
+    '<circle cx="8" cy="5" r="0.8" fill="#94A3B8"/>' +
+    '</svg>';
+
+function CreateFallbackIcon(const AWidth, AHeight: Integer): TFtBitmap;
+begin
+  Result := nil;
+  if not FtIsLibLoaded() then Exit;
+  try
+    Result := TFtBitmap.CreateFromSVG(FALLBACK_WINDOW_ICON_SVG, AWidth, AHeight);
+    if Assigned(Result) and ((Result.Width = 0) or (Result.Height = 0)) then
+    begin
+      Result.Free();
+      Result := nil;
+    end;
+  except
+    Result := nil;
+  end;
+end;
+
+initialization
+  GIconPathCache := TStringList.Create();
+  GIconPathCache.CaseSensitive := True;
+
+finalization
+  if Assigned(GIconPathCache) then
+  begin
+    GIconPathCache.Free();
+    GIconPathCache := nil;
+  end;
 
 end.

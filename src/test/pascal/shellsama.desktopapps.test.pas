@@ -25,6 +25,9 @@ type
     procedure TestMRURecordAndPersist();
     procedure TestMRUSortOrder();
     procedure TestUserOverridesSystem();
+    procedure TestParseDesktopIcon();
+    procedure TestResolveIconPath();
+    procedure TestFindAppByClass();
   end;
 
 implementation
@@ -342,6 +345,86 @@ begin
   try
     AppList.LoadAll();
     AssertTrue('LoadAll completes without error', True);
+  finally
+    AppList.Free();
+  end;
+end;
+
+procedure TDesktopAppsTest.TestParseDesktopIcon();
+var
+  AppList: TDesktopAppList;
+  App: TDesktopApp;
+  I: Integer;
+  FoundIcon: Boolean;
+begin
+  AppList := TDesktopAppList.Create();
+  try
+    AppList.LoadAll();
+    AssertTrue('AppCount should be > 0', AppList.AppCount() > 0);
+
+    FoundIcon := False;
+    for I := 0 to AppList.AppCount() - 1 do
+    begin
+      App := AppList.GetApp(I);
+      if App.Icon <> '' then
+      begin
+        FoundIcon := True;
+        Break;
+      end;
+    end;
+    AssertTrue('At least one desktop app should have an Icon defined', FoundIcon);
+  finally
+    AppList.Free();
+  end;
+end;
+
+procedure TDesktopAppsTest.TestResolveIconPath();
+var
+  Resolved: string;
+  TmpIconPath: string;
+begin
+  // 1. Empty icon name returns empty
+  AssertEquals('Empty icon name resolves to empty string', '', ResolveIconPath(''));
+
+  // 2. Direct existing file path
+  TmpIconPath := GetTempDir(False) + 'test_icon_48.png';
+  with TFileStream.Create(TmpIconPath, fmCreate) do
+    Free();
+  try
+    Resolved := ResolveIconPath(TmpIconPath, 48);
+    AssertEquals('Direct path should resolve to itself', TmpIconPath, Resolved);
+  finally
+    DeleteFile(TmpIconPath);
+  end;
+
+  // 3. Known system icon or pixmap resolution
+  Resolved := ResolveIconPath('system-file-manager', 24);
+  if Resolved <> '' then
+    AssertTrue('Resolved path must exist', FileExists(Resolved));
+end;
+
+procedure TDesktopAppsTest.TestFindAppByClass();
+var
+  AppList: TDesktopAppList;
+  App: TDesktopApp;
+  Matched: Boolean;
+  FirstApp: TDesktopApp;
+begin
+  AppList := TDesktopAppList.Create();
+  try
+    AppList.LoadAll();
+    if AppList.AppCount() = 0 then Exit;
+
+    FirstApp := AppList.GetApp(0);
+
+    // Matching by DesktopId without .desktop
+    Matched := AppList.FindAppByClass(ChangeFileExt(FirstApp.DesktopId, ''), '', App);
+    AssertTrue('Should match app by base DesktopId', Matched);
+    AssertEquals('Matched app ID should match', FirstApp.DesktopId, App.DesktopId);
+
+    // Matching non-existent class returns False
+    Matched := AppList.FindAppByClass('__totally_non_existent_wm_class__', '__xyz__', App);
+    AssertFalse('Non-existent class should not match', Matched);
   finally
     AppList.Free();
   end;

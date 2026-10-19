@@ -25,6 +25,7 @@ type
     procedure TestLauncherPageNavigation();
     procedure TestLauncherVirtualScrollOffset();
     procedure TestLauncherToggleAndVisibility();
+    procedure TestLauncherAppIcons();
   end;
 
 implementation
@@ -174,6 +175,29 @@ begin
 
   FLauncher.Toggle();
   AssertFalse('Not visible after second Toggle()', FLauncher.IsVisible);
+end;
+
+procedure TLauncherTest.TestLauncherAppIcons();
+var
+  fallbackBmp: TFtBitmap;
+  btn: TFtButton;
+begin
+  // 1. Fallback icon generation for empty/unknown icon name
+  fallbackBmp := FLauncher.GetOrLoadAppIcon('', 20);
+  AssertNotNull('GetOrLoadAppIcon("") should return valid bitmap', fallbackBmp);
+  AssertEquals('Fallback icon width is 20', 20, fallbackBmp.Width);
+  AssertEquals('Fallback icon height is 20', 20, fallbackBmp.Height);
+
+  // 2. Icon cache should contain at least the fallback icon
+  AssertTrue('IconCacheCount >= 1', FLauncher.IconCacheCount >= 1);
+
+  // 3. Item buttons should be accessible
+  btn := FLauncher.GetItemButton(0);
+  AssertNotNull('Item button 0 should be initialized', btn);
+
+  // 4. Updating visible items should maintain valid state
+  FLauncher.HandleSearchChanged('');
+  AssertTrue('Results count > 0 after search reset', FLauncher.ResultsCount > 0);
 end;
 
 initialization

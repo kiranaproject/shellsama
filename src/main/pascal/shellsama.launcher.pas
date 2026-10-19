@@ -20,6 +20,11 @@ const
   LAUNCHER_ITEM_HEIGHT = 32;
 
 type
+  TLauncherIconItem = record
+    IconKey: string;
+    Bitmap : TFtBitmap;
+  end;
+
   TShellLauncher = class
   private
     FWindow          : TFtWindow;
@@ -37,6 +42,7 @@ type
     FSuperKeycodeR   : xcb_keycode_t;
     FSuperPressed    : Boolean;
     FOtherKeyPressed : Boolean;
+    FLauncherIconCache: array of TLauncherIconItem;
 
     procedure InitializeUI();
     procedure ResolveKeycodes();
@@ -68,6 +74,9 @@ type
     procedure HandleItemClick(AButton: TFtButton);
 
     function HandleXcbEvent(Event: Pxcb_generic_event_t): Boolean;
+    function GetIconCacheCount(): Integer;
+    function GetItemButton(AIndex: Integer): TFtButton;
+    function GetOrLoadAppIcon(const AIconName: string; const APreferredSize: Integer = 20): TFtBitmap;
 
     property Window        : TFtWindow        read FWindow;
     property SearchEntry   : TFtEntry         read FSearchEntry;
@@ -76,6 +85,7 @@ type
     property ScrollOffset  : Integer          read FScrollOffset;
     property IsVisible     : Boolean          read FVisible;
     property ResultsCount  : Integer          read GetResultsCount;
+    property IconCacheCount: Integer          read GetIconCacheCount;
   end;
 
 var
@@ -125,12 +135,15 @@ begin
   InitializeUI();
   ResolveKeycodes();
   GrabSuperKey();
+  SetLength(FLauncherIconCache, 0);
 
   if Assigned(ft_register_event_filter) then
     ft_register_event_filter(@LauncherEventFilterCallback);
 end;
 
 destructor TShellLauncher.Destroy();
+var
+  i: Integer;
 begin
   if Assigned(ft_register_event_filter) then
     ft_register_event_filter(nil);
@@ -138,6 +151,16 @@ begin
 
   if GLauncherInstance = Self then
     GLauncherInstance := nil;
+
+  for i := 0 to High(FLauncherIconCache) do
+  begin
+    if Assigned(FLauncherIconCache[i].Bitmap) then
+    begin
+      FLauncherIconCache[i].Bitmap.Free();
+      FLauncherIconCache[i].Bitmap := nil;
+    end;
+  end;
+  SetLength(FLauncherIconCache, 0);
 
   if Assigned(FWindow) then
   begin
@@ -158,6 +181,57 @@ end;
 function TShellLauncher.GetResultsCount(): Integer;
 begin
   Result := Length(FCurrentResults);
+end;
+
+function TShellLauncher.GetIconCacheCount(): Integer;
+begin
+  Result := Length(FLauncherIconCache);
+end;
+
+function TShellLauncher.GetItemButton(AIndex: Integer): TFtButton;
+begin
+  Result := nil;
+  if (AIndex >= 0) and (AIndex < LAUNCHER_VISIBLE_ITEMS) then
+    Result := FItemButtons[AIndex];
+end;
+
+function TShellLauncher.GetOrLoadAppIcon(const AIconName: string; const APreferredSize: Integer = 20): TFtBitmap;
+var
+  i: Integer;
+  key, iconPath: string;
+  bmp: TFtBitmap;
+begin
+  Result := nil;
+  if not FtIsLibLoaded() then Exit;
+
+  key := Trim(AIconName);
+  if key = '' then
+    key := '__fallback__';
+
+  for i := 0 to High(FLauncherIconCache) do
+  begin
+    if FLauncherIconCache[i].IconKey = key then
+    begin
+      Result := FLauncherIconCache[i].Bitmap;
+      Exit;
+    end;
+  end;
+
+  bmp := nil;
+  if key <> '__fallback__' then
+  begin
+    iconPath := ResolveIconPath(key, APreferredSize);
+    if iconPath <> '' then
+      bmp := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
+  end;
+
+  if bmp = nil then
+    bmp := CreateFallbackIcon(APreferredSize, APreferredSize);
+
+  SetLength(FLauncherIconCache, Length(FLauncherIconCache) + 1);
+  FLauncherIconCache[High(FLauncherIconCache)].IconKey := key;
+  FLauncherIconCache[High(FLauncherIconCache)].Bitmap := bmp;
+  Result := bmp;
 end;
 
 procedure TShellLauncher.HandleSearchEntryChange(Sender: TFtWidget; const AText: string);
@@ -287,6 +361,7 @@ var
   i, resIdx: Integer;
   totCount: Integer;
   isSelected: Boolean;
+  appIcon: TFtBitmap;
 begin
   totCount := Length(FCurrentResults);
 
@@ -298,12 +373,24 @@ begin
       isSelected := (resIdx = FSelectedIndex);
       FItemButtons[i].Caption := FCurrentResults[resIdx].Name;
       FItemButtons[i].Toggled := isSelected;
+
+      appIcon := GetOrLoadAppIcon(FCurrentResults[resIdx].Icon, 20);
+      if Assigned(appIcon) then
+      begin
+        FItemButtons[i].SetIconBitmap(appIcon, False);
+        FItemButtons[i].SetIconSize(20, 20);
+        FItemButtons[i].IconGap := 8;
+      end
+      else
+        FItemButtons[i].ClearIcon();
+
       FItemButtons[i].Show();
     end
     else
     begin
       FItemButtons[i].Caption := '';
       FItemButtons[i].Toggled := False;
+      FItemButtons[i].ClearIcon();
       FItemButtons[i].Hide();
     end;
     FItemButtons[i].Invalidate();
