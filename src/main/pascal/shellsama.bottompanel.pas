@@ -900,6 +900,8 @@ begin
       FTasks[i].Button := TFtButton.Create(FWindow, btnX, 3, btnW, 32, dispTitle);
       FTasks[i].Button.IsToggle := True;
       FTasks[i].Button.CornerRadius := 6.0;
+      FTasks[i].Button.Alignment := ftaLeft;
+      FTasks[i].Button.PaddingX := 8.0;
       FTasks[i].Button.Tag := PtrInt(FTasks[i].Window);
       FTasks[i].Button.OnClick := @HandleTaskButtonClick;
     end
@@ -907,6 +909,8 @@ begin
     begin
       FTasks[i].Button.SetBounds(btnX, 3, btnW, 32);
       FTasks[i].Button.Caption := dispTitle;
+      FTasks[i].Button.Alignment := ftaLeft;
+      FTasks[i].Button.PaddingX := 8.0;
     end;
 
     if Assigned(iconBmp) then

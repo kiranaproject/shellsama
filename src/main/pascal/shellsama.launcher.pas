@@ -280,6 +280,8 @@ begin
     FItemButtons[i] := TFtButton.Create(FWindow, 20, itemY, LAUNCHER_WIDTH - 40, LAUNCHER_ITEM_HEIGHT, '');
     FItemButtons[i].CornerRadius := 6.0;
     FItemButtons[i].IsToggle := True;
+    FItemButtons[i].Alignment := ftaLeft;
+    FItemButtons[i].PaddingX := 12.0;
     FItemButtons[i].OnClick := @HandleItemButtonClick;
   end;
 
