@@ -12,14 +12,18 @@ uses
   ShellSama.Panel,
   ShellSama.DesktopApps,
   ShellSama.Launcher,
-  ShellSama.BottomPanel;
+  ShellSama.BottomPanel,
+  ShellSama.Desktop;
 
 var
   Panel: TShellPanel;
   Launcher: TShellLauncher;
   BottomPanel: TShellBottomPanel;
+  Desktop: TShellDesktop;
   AutoShowLauncher: Boolean;
   NoBottomPanel: Boolean;
+  NoDesktop: Boolean;
+  CustomWallpaper: string;
   i: Integer;
   arg: string;
 begin
@@ -28,7 +32,10 @@ begin
 
   AutoShowLauncher := False;
   NoBottomPanel := False;
-  for i := 1 to ParamCount do
+  NoDesktop := False;
+  CustomWallpaper := '';
+  i := 1;
+  while i <= ParamCount do
   begin
     arg := ParamStr(i);
     if (arg = '--version') or (arg = '-v') then
@@ -40,10 +47,12 @@ begin
     begin
       WriteLn('Usage: shellsama [options]');
       WriteLn('Options:');
-      WriteLn('  --show-launcher    Show the application launcher immediately on start');
-      WriteLn('  --no-bottom-panel  Do not display the bottom taskbar panel');
-      WriteLn('  --version, -v      Print version and exit');
-      WriteLn('  --help, -h         Print this help message and exit');
+      WriteLn('  --show-launcher        Show the application launcher immediately on start');
+      WriteLn('  --no-bottom-panel      Do not display the bottom taskbar panel');
+      WriteLn('  --no-desktop           Do not display the desktop wallpaper surface');
+      WriteLn('  --wallpaper <path>     Load and display the specified wallpaper image');
+      WriteLn('  --version, -v          Print version and exit');
+      WriteLn('  --help, -h             Print this help message and exit');
       Halt(0);
     end
     else if arg = '--show-launcher' then
@@ -53,7 +62,17 @@ begin
     else if arg = '--no-bottom-panel' then
     begin
       NoBottomPanel := True;
+    end
+    else if arg = '--no-desktop' then
+    begin
+      NoDesktop := True;
+    end
+    else if (arg = '--wallpaper') and (i < ParamCount) then
+    begin
+      Inc(i);
+      CustomWallpaper := ParamStr(i);
     end;
+    Inc(i);
   end;
 
   Panel := TShellPanel.Create(1920, 1080);
@@ -79,32 +98,48 @@ begin
       end;
     end;
 
-    Launcher := TShellLauncher.Create();
     try
-      WriteLn('Application Launcher ready (Super key toggles launcher)');
-      WriteLn('Loaded ', Launcher.AppList.AppCount(), ' desktop application(s)');
-
-      if not NoBottomPanel then
+      if not NoDesktop then
       begin
-        BottomPanel := TShellBottomPanel.Create(Launcher);
-        BottomPanel.Show();
-        WriteLn('Bottom Panel & Taskbar ready at (', BottomPanel.PanelX(), ', ', BottomPanel.PanelY(), ') ',
-                BottomPanel.PanelWidth(), 'x', BottomPanel.PanelHeight(), ' px');
+        Desktop := TShellDesktop.Create();
+        if CustomWallpaper <> '' then
+          Desktop.SetWallpaper(CustomWallpaper);
+        Desktop.Show();
+        WriteLn('Desktop Wallpaper ready (', Desktop.Width, 'x', Desktop.Height, ')');
       end
       else
-        BottomPanel := nil;
+        Desktop := nil;
 
+      Launcher := TShellLauncher.Create();
       try
-        if AutoShowLauncher then
-          Launcher.Show();
+        WriteLn('Application Launcher ready (Super key toggles launcher)');
+        WriteLn('Loaded ', Launcher.AppList.AppCount(), ' desktop application(s)');
 
-        FtApp().Run();
+        if not NoBottomPanel then
+        begin
+          BottomPanel := TShellBottomPanel.Create(Launcher);
+          BottomPanel.Show();
+          WriteLn('Bottom Panel & Taskbar ready at (', BottomPanel.PanelX(), ', ', BottomPanel.PanelY(), ') ',
+                  BottomPanel.PanelWidth(), 'x', BottomPanel.PanelHeight(), ' px');
+        end
+        else
+          BottomPanel := nil;
+
+        try
+          if AutoShowLauncher then
+            Launcher.Show();
+
+          FtApp().Run();
+        finally
+          if Assigned(BottomPanel) then
+            BottomPanel.Free();
+        end;
       finally
-        if Assigned(BottomPanel) then
-          BottomPanel.Free();
+        Launcher.Free();
       end;
     finally
-      Launcher.Free();
+      if Assigned(Desktop) then
+        Desktop.Free();
     end;
   finally
     Panel.Free();
