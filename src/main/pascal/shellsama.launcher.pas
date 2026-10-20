@@ -258,7 +258,7 @@ begin
   FWindow := TFtWindow.Create(LAUNCHER_WIDTH, LAUNCHER_HEIGHT, 'Samarinda Launcher');
   FWindow.Borderless := True;
   FWindow.SkipTaskbar := True;
-  FWindow.WindowType := ftwtDialog;
+  FWindow.WindowType := ftwtUtility;
 
   screenWidth := FtApp().ScreenWidth;
   screenHeight := FtApp().ScreenHeight;
