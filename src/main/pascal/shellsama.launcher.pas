@@ -91,6 +91,8 @@ type
 var
   GLauncherInstance: TShellLauncher = nil;
 
+function LauncherEventFilterCallback(event: Pointer): cint32; cdecl;
+
 implementation
 
 procedure c_free(p: Pointer); cdecl; external 'c' name 'free';

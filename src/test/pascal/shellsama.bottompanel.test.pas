@@ -83,6 +83,9 @@ begin
   AssertNotNull('Window widget must be created', FPanel.WindowWidget);
   AssertNotNull('Launcher button must be created', FPanel.LauncherWidget);
   AssertNotNull('Clock text widget must be created', FPanel.ClockWidget);
+  AssertNotNull('Tray widget must be created', FPanel.TrayWidget);
+  AssertNotNull('Volume applet must be created', FPanel.VolumeApplet);
+  AssertNotNull('Session applet must be created', FPanel.SessionApplet);
 end;
 
 procedure TBottomPanelTest.TestPanelVisibilityToggle();

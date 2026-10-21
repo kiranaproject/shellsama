@@ -12,7 +12,9 @@ uses
   Floria.XCB,
   ftpas.api, ftpas.types, ftpas,
   ShellSama.DesktopApps,
-  ShellSama.Launcher;
+  ShellSama.Launcher,
+  ShellSama.Tray,
+  ShellSama.Applets;
 
 type
   PCardinalArray = ^TCardinalArray;
@@ -39,6 +41,9 @@ type
     FLauncherBtn    : TFtButton;
     FClockText      : TFtLabel;
     FShowDesktopBtn : TFtButton;
+    FSessionApplet  : TShellSessionApplet;
+    FVolumeApplet   : TShellVolumeApplet;
+    FTray           : TShellSystemTray;
     FLauncher       : TShellLauncher;
     FIsVisible      : Boolean;
     FShowingDesktop : Boolean;
@@ -92,6 +97,7 @@ type
     procedure HandleLauncherButtonClick(Sender: TFtButton);
     procedure HandleShowDesktopButtonClick(Sender: TFtButton);
     procedure HandleTaskButtonClick(Sender: TFtButton);
+    procedure HandleTrayLayoutChanged(Sender: TObject);
   public
     constructor Create(ALauncher: TShellLauncher = nil);
     destructor Destroy(); override;
@@ -126,6 +132,9 @@ type
     property WindowWidget  : TFtWindow       read FWindow;
     property LauncherWidget: TFtButton       read FLauncherBtn;
     property ClockWidget   : TFtLabel        read FClockText;
+    property TrayWidget    : TShellSystemTray read FTray;
+    property VolumeApplet  : TShellVolumeApplet read FVolumeApplet;
+    property SessionApplet : TShellSessionApplet read FSessionApplet;
   end;
 
 var
@@ -226,6 +235,24 @@ begin
   end;
   SetLength(FWindowIconCache, 0);
 
+  if Assigned(FTray) then
+  begin
+    FTray.Free();
+    FTray := nil;
+  end;
+
+  if Assigned(FVolumeApplet) then
+  begin
+    FVolumeApplet.Free();
+    FVolumeApplet := nil;
+  end;
+
+  if Assigned(FSessionApplet) then
+  begin
+    FSessionApplet.Free();
+    FSessionApplet := nil;
+  end;
+
   if Assigned(FWindow) then
   begin
     FWindow.Free();
@@ -252,6 +279,11 @@ procedure TShellBottomPanel.HandleTaskButtonClick(Sender: TFtButton);
 begin
   if Assigned(Sender) and (Sender.Tag <> 0) then
     OnTaskClicked(Cardinal(Sender.Tag));
+end;
+
+procedure TShellBottomPanel.HandleTrayLayoutChanged(Sender: TObject);
+begin
+  LayoutButtons();
 end;
 
 procedure TShellBottomPanel.InitAtoms();
@@ -308,14 +340,30 @@ begin
   FLauncherBtn.CornerRadius := 6.0;
   FLauncherBtn.OnClick := @HandleLauncherButtonClick;
 
-  // 2. Clock text label on the right
-  FClockText := TFtLabel.Create(FWindow, FPanelWidth - 164, 3, 126, 32, '--:--');
+  // 2. Show Desktop button on the extreme right
+  FShowDesktopBtn := TFtButton.Create(FWindow, FPanelWidth - 36, 3, 32, 32, '▭');
+  FShowDesktopBtn.CornerRadius := 6.0;
+  FShowDesktopBtn.PaddingX := 2.0;
+  FShowDesktopBtn.Font := 'Noto Sans Symbols2 12';
+  FShowDesktopBtn.OnClick := @HandleShowDesktopButtonClick;
+
+  // 3. Power / Session Applet
+  FSessionApplet := TShellSessionApplet.Create(FWindow, FPanelWidth - 70, 3, 32, 32);
+
+  // 4. Clock text label
+  FClockText := TFtLabel.Create(FWindow, FPanelWidth - 164, 3, 90, 32, '--:--');
   FClockText.Alignment := ftaCenter;
 
-  // 3. Show Desktop button on the extreme right
-  FShowDesktopBtn := TFtButton.Create(FWindow, FPanelWidth - 34, 3, 28, 32, '▤');
-  FShowDesktopBtn.CornerRadius := 6.0;
-  FShowDesktopBtn.OnClick := @HandleShowDesktopButtonClick;
+  // 5. Volume Applet
+  FVolumeApplet := TShellVolumeApplet.Create(FWindow, FPanelWidth - 204, 3, 36, 32);
+
+  // 6. System Tray Host
+  FTray := TShellSystemTray.Create(FWindow, 0);
+  FTray.IconSize := 22;
+  FTray.IconGap := 4;
+  FTray.StartY := (FPanelHeight - FTray.IconSize) div 2;
+  FTray.OnLayoutChanged := @HandleTrayLayoutChanged;
+  FTray.ClaimSelection();
 
   UpdateClock();
   RefreshTasks();
@@ -871,6 +919,7 @@ end;
 procedure TShellBottomPanel.LayoutButtons();
 var
   startX, endX, availW, numTasks: Integer;
+  trayW, trayX: Integer;
   btnW, btnX, i: Integer;
   dispTitle: string;
   iconBmp: TFtBitmap;
@@ -878,7 +927,18 @@ begin
   if FWindow = nil then Exit;
 
   startX := 122;
-  endX := FPanelWidth - 172;
+
+  // Calculate dynamic endX based on System Tray and Applets
+  if Assigned(FTray) then
+  begin
+    trayW := FTray.Width;
+    trayX := (FPanelWidth - 212) - trayW;
+    FTray.SetPosition(trayX, (FPanelHeight - FTray.IconSize) div 2);
+    endX := trayX - 8;
+  end
+  else
+    endX := FPanelWidth - 212;
+
   availW := Max(100, endX - startX);
   numTasks := Length(FTasks);
 
@@ -947,6 +1007,9 @@ var
   curActive: Cardinal;
 begin
   UpdateClock();
+
+  if Assigned(FVolumeApplet) then
+    FVolumeApplet.Tick();
 
   // Sync launcher button toggled state
   if Assigned(FLauncherBtn) and Assigned(FLauncher) then

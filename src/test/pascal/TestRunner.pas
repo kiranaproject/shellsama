@@ -8,7 +8,9 @@ uses
   ShellSama.DesktopApps.Test,
   ShellSama.Launcher.Test,
   ShellSama.BottomPanel.Test,
-  ShellSama.Desktop.Test;
+  ShellSama.Desktop.Test,
+  ShellSama.Tray.Test,
+  ShellSama.Applets.Test;
 
 var
   Application: TTestRunner;
