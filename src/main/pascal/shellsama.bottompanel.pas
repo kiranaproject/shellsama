@@ -142,6 +142,16 @@ var
 
 implementation
 
+const
+  SVG_PANEL_ICON_COLOR = '#2c3e50';
+
+  SVG_DESKTOP_ICON =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_PANEL_ICON_COLOR + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>' +
+    '<line x1="8" y1="21" x2="16" y2="21"/>' +
+    '<line x1="12" y1="17" x2="12" y2="21"/>' +
+    '</svg>';
+
 procedure c_free(p: Pointer); cdecl; external 'c' name 'free';
 
 function InternAtom(AConn: Pxcb_connection_t; const AName: string): Cardinal;
@@ -341,10 +351,11 @@ begin
   FLauncherBtn.OnClick := @HandleLauncherButtonClick;
 
   // 2. Show Desktop button on the extreme right
-  FShowDesktopBtn := TFtButton.Create(FWindow, FPanelWidth - 36, 3, 32, 32, '▭');
+  FShowDesktopBtn := TFtButton.Create(FWindow, FPanelWidth - 36, 3, 32, 32, '');
   FShowDesktopBtn.CornerRadius := 6.0;
-  FShowDesktopBtn.PaddingX := 2.0;
-  FShowDesktopBtn.Font := 'Noto Sans Symbols2 12';
+  FShowDesktopBtn.IconPosition := ftipOnly;
+  FShowDesktopBtn.SetIconSize(18, 18);
+  FShowDesktopBtn.SetIconSVG(SVG_DESKTOP_ICON);
   FShowDesktopBtn.OnClick := @HandleShowDesktopButtonClick;
 
   // 3. Power / Session Applet

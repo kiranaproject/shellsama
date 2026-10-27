@@ -80,23 +80,26 @@ end;
 
 procedure TAppletsTest.TestVolumeAppletGlyphsAndMute();
 begin
-  // Muted state -> '🔇'
+  // Button icon position must be ftipOnly for centered vector icon
+  AssertEquals('Volume button icon position must be ftipOnly', Ord(ftipOnly), Ord(FVolumeApplet.Button.IconPosition));
+
+  // Muted state -> vikMuted
   FVolumeApplet.SetVolumeState(75, True);
   AssertTrue('Applet should report muted', FVolumeApplet.IsMuted);
-  AssertEquals('Muted button glyph must be 🔇', '🔇', FVolumeApplet.Button.Caption);
+  AssertEquals('Muted state icon kind', Ord(vikMuted), Ord(FVolumeApplet.IconKind));
 
-  // Unmuted low volume (< 33) -> '🔈'
+  // Unmuted low volume (< 33) -> vikLow
   FVolumeApplet.SetVolumeState(20, False);
   AssertFalse('Applet should report unmuted', FVolumeApplet.IsMuted);
-  AssertEquals('Low volume button glyph must be 🔈', '🔈', FVolumeApplet.Button.Caption);
+  AssertEquals('Low volume icon kind', Ord(vikLow), Ord(FVolumeApplet.IconKind));
 
-  // Unmuted medium volume (33..65) -> '🔉'
+  // Unmuted medium volume (33..65) -> vikMedium
   FVolumeApplet.SetVolumeState(50, False);
-  AssertEquals('Medium volume button glyph must be 🔉', '🔉', FVolumeApplet.Button.Caption);
+  AssertEquals('Medium volume icon kind', Ord(vikMedium), Ord(FVolumeApplet.IconKind));
 
-  // Unmuted high volume (>= 66) -> '🔊'
+  // Unmuted high volume (>= 66) -> vikHigh
   FVolumeApplet.SetVolumeState(85, False);
-  AssertEquals('High volume button glyph must be 🔊', '🔊', FVolumeApplet.Button.Caption);
+  AssertEquals('High volume icon kind', Ord(vikHigh), Ord(FVolumeApplet.IconKind));
 end;
 
 procedure TAppletsTest.TestVolumePopupLifecycle();
@@ -131,7 +134,7 @@ procedure TAppletsTest.TestSessionAppletCreationAndMenu();
 begin
   AssertNotNull('Session applet must be created', FSessionApplet);
   AssertNotNull('Session button must be created', FSessionApplet.Button);
-  AssertEquals('Session button caption must be ⏻', '⏻', FSessionApplet.Button.Caption);
+  AssertEquals('Session button icon position must be ftipOnly', Ord(ftipOnly), Ord(FSessionApplet.Button.IconPosition));
 
   AssertNotNull('Session popup menu must be created', FSessionApplet.Menu);
   AssertEquals('Session menu should contain 6 items', 6, FSessionApplet.Menu.ItemCount);

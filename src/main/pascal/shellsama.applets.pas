@@ -11,6 +11,8 @@ uses
   ftpas.api, ftpas.types, ftpas, ftpas.controls, ftpas.menus;
 
 type
+  TVolumeIconKind = (vikMuted, vikLow, vikMedium, vikHigh);
+
   { TShellVolumeApplet — Interactive Volume Control Applet & Popup }
   TShellVolumeApplet = class
   private
@@ -24,6 +26,7 @@ type
 
     FCurVolume     : Integer;
     FIsMuted       : Boolean;
+    FIconKind      : TVolumeIconKind;
     FIsUpdatingUI  : Boolean;
     FLastCheckTick : Int64;
 
@@ -56,6 +59,7 @@ type
     property Button: TFtButton read FButton;
     property CurrentVolume: Integer read FCurVolume;
     property IsMuted: Boolean read FIsMuted;
+    property IconKind: TVolumeIconKind read FIconKind;
     property PopupWindow: TFtWindow read FPopupWindow;
     property Slider: TFtSlider read FVolumeSlider;
     property MuteButton: TFtButton read FMuteBtn;
@@ -86,6 +90,40 @@ type
 
 implementation
 
+const
+  SVG_ICON_COLOR = '#2c3e50';
+
+  SVG_POWER_ICON =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_ICON_COLOR + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>' +
+    '<line x1="12" y1="2" x2="12" y2="12"/>' +
+    '</svg>';
+
+  SVG_VOL_HIGH =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_ICON_COLOR + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="' + SVG_ICON_COLOR + '"/>' +
+    '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>' +
+    '<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>' +
+    '</svg>';
+
+  SVG_VOL_MED =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_ICON_COLOR + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="' + SVG_ICON_COLOR + '"/>' +
+    '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>' +
+    '</svg>';
+
+  SVG_VOL_LOW =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_ICON_COLOR + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="' + SVG_ICON_COLOR + '"/>' +
+    '</svg>';
+
+  SVG_VOL_MUTE =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_ICON_COLOR + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="' + SVG_ICON_COLOR + '"/>' +
+    '<line x1="22" y1="9" x2="16" y2="15"/>' +
+    '<line x1="16" y1="9" x2="22" y2="15"/>' +
+    '</svg>';
+
 procedure ExecShellCmdAsync(const ACmd: string);
 var
   AProcess: TProcess;
@@ -112,11 +150,14 @@ begin
   FPanelWindow := AParentWindow;
   FCurVolume := 100;
   FIsMuted := False;
+  FIconKind := vikHigh;
   FIsUpdatingUI := False;
   FLastCheckTick := 0;
 
-  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '🔊');
+  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
   FButton.CornerRadius := 6.0;
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
   FButton.OnClick := @HandleButtonClick;
 
   QueryVolume(FCurVolume, FIsMuted);
@@ -236,15 +277,31 @@ procedure TShellVolumeApplet.UpdateUI();
 begin
   if FButton = nil then Exit;
 
-  // 1. Update panel button icon/text
+  // 1. Update panel button monochrome SVG icon
+  FButton.Caption := '';
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+
   if FIsMuted or (FCurVolume = 0) then
-    FButton.Caption := '🔇'
+  begin
+    FIconKind := vikMuted;
+    FButton.SetIconSVG(SVG_VOL_MUTE);
+  end
   else if FCurVolume < 33 then
-    FButton.Caption := '🔈'
+  begin
+    FIconKind := vikLow;
+    FButton.SetIconSVG(SVG_VOL_LOW);
+  end
   else if FCurVolume < 66 then
-    FButton.Caption := '🔉'
+  begin
+    FIconKind := vikMedium;
+    FButton.SetIconSVG(SVG_VOL_MED);
+  end
   else
-    FButton.Caption := '🔊';
+  begin
+    FIconKind := vikHigh;
+    FButton.SetIconSVG(SVG_VOL_HIGH);
+  end;
 
   // 2. Update popup widgets if currently open
   if Assigned(FPopupWindow) and not FIsUpdatingUI then
@@ -414,9 +471,11 @@ begin
   inherited Create();
   FPanelWindow := AParentWindow;
 
-  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '⏻');
+  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
   FButton.CornerRadius := 6.0;
-  FButton.Font := 'Noto Sans Symbols2 13';
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.SetIconSVG(SVG_POWER_ICON);
   FButton.OnClick := @HandleButtonClick;
 
   FMenu := TFtPopupMenu.Create(FPanelWindow);
