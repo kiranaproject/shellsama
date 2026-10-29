@@ -82,6 +82,9 @@ procedure TBottomPanelTest.TestWidgetsInitialized();
 begin
   AssertNotNull('Window widget must be created', FPanel.WindowWidget);
   AssertNotNull('Launcher button must be created', FPanel.LauncherWidget);
+  AssertEquals('Launcher button caption must be Samarinda', 'Samarinda', FPanel.LauncherWidget.Caption);
+  AssertEquals('Launcher button icon position must be ftipLeft', Ord(ftipLeft), Ord(FPanel.LauncherWidget.IconPosition));
+  AssertNotNull('Launcher button icon must be loaded', ft_button_get_icon_bitmap(FPanel.LauncherWidget.Handle));
   AssertNotNull('Clock text widget must be created', FPanel.ClockWidget);
   AssertNotNull('Tray widget must be created', FPanel.TrayWidget);
   AssertNotNull('Volume applet must be created', FPanel.VolumeApplet);
