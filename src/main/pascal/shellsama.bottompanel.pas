@@ -145,6 +145,15 @@ implementation
 const
   SVG_PANEL_ICON_COLOR = '#2c3e50';
 
+  // How often the panel's timer fires.
+  //
+  // The panel's work is all slow-changing: the clock needs 1 Hz, the task list only
+  // needs to notice active-window changes, and the volume applet polls only while
+  // its popup is open. 250 ms keeps the clock visually exact (it updates on the
+  // second boundary, not up to a second late) at a fraction of the cost of a frame
+  // rate callback.
+  PANEL_TIMER_MS = 250;
+
   SVG_DESKTOP_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_PANEL_ICON_COLOR + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
     '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>' +
@@ -244,8 +253,24 @@ begin
   SetupWindow();
   SetLength(FWindowIconCache, 0);
 
-  if FtIsLibLoaded() and Assigned(ft_set_tick_callback) then
-    ft_set_tick_callback(@PanelTickCallback, Self);
+  // Drive the panel from a timer, not the frame loop.
+  //
+  // Everything in Tick() is slow-changing: the clock needs 1 Hz, the task list
+  // needs to refresh when the active window changes, and the volume applet polls
+  // only while its popup is open. None of that needs 60 Hz, and asking for it
+  // meant 60 wake-ups a second to discover ~59 no-ops.
+  //
+  // A timer costs wake-ups at its own rate: the loop blocks between frames when
+  // there is nothing to animate, so an idle shell now sleeps instead of polling.
+  // ft_set_timer is optional, so fall back to the old tick if the loaded libft
+  // predates it.
+  if FtIsLibLoaded() then
+  begin
+    if Assigned(ft_set_timer) then
+      ft_set_timer(PANEL_TIMER_MS, @PanelTickCallback, Self)
+    else if Assigned(ft_set_tick_callback) then
+      ft_set_tick_callback(@PanelTickCallback, Self);
+  end;
 end;
 
 destructor TShellBottomPanel.Destroy();
@@ -255,8 +280,13 @@ begin
   if GBottomPanelInstance = Self then
     GBottomPanelInstance := nil;
 
-  if FtIsLibLoaded() and Assigned(ft_set_tick_callback) then
-    ft_set_tick_callback(nil, nil);
+  if FtIsLibLoaded() then
+  begin
+    if Assigned(ft_set_timer) then
+      ft_set_timer(0, nil, nil)
+    else if Assigned(ft_set_tick_callback) then
+      ft_set_tick_callback(nil, nil);
+  end;
 
   for i := 0 to High(FTasks) do
   begin
