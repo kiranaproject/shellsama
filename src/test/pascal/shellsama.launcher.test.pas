@@ -180,7 +180,6 @@ end;
 procedure TLauncherTest.TestLauncherAppIcons();
 var
   fallbackBmp: TFtBitmap;
-  btn: TFtButton;
 begin
   // 1. Fallback icon generation for empty/unknown icon name
   fallbackBmp := FLauncher.GetOrLoadAppIcon('', 20);
@@ -191,11 +190,17 @@ begin
   // 2. Icon cache should contain at least the fallback icon
   AssertTrue('IconCacheCount >= 1', FLauncher.IconCacheCount >= 1);
 
-  // 3. Item buttons should be accessible
-  btn := FLauncher.GetItemButton(0);
-  AssertNotNull('Item button 0 should be initialized', btn);
+  // 3. Icons are cached by name: a second request must be the same object.
+  AssertTrue('Same icon request returns the cached bitmap',
+    FLauncher.GetOrLoadAppIcon('', 20) = fallbackBmp);
 
-  // 4. Updating visible items should maintain valid state
+  // 4. The list is drawn on a drawing area, not assembled from per-row buttons.
+  //    (It used to be 10 recycled TFtButtons, which is what made the launcher
+  //    look like a stack of static buttons.)
+  AssertNotNull('List drawing area exists', FLauncher.ListArea);
+  AssertNull('No per-row buttons any more', FLauncher.GetItemButton(0));
+
+  // 5. Updating visible items should maintain valid state
   FLauncher.HandleSearchChanged('');
   AssertTrue('Results count > 0 after search reset', FLauncher.ResultsCount > 0);
 end;

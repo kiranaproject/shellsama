@@ -66,6 +66,8 @@ type
     // Window-id signature of the task set as of the last refresh. Lets Tick notice
     // a window appearing or disappearing without a full query every tick.
     FLastTaskSignature : AnsiString;
+    // True while the panel's timer is running fast for a launcher animation.
+    FAnimTimerActive : Boolean;
 
     // XCB connection details
     FConn           : Pxcb_connection_t;
@@ -184,6 +186,12 @@ const
   // rate callback.
   PANEL_TIMER_MS = 250;
 
+  // While the launcher is scrolling, the panel has to tick at frame rate or the
+  // animation snaps: its 140ms scroll would get a single 250ms tick and land
+  // straight on the target. The panel owns the timer, so it switches interval for
+  // the duration of the animation and switches back afterwards.
+  PANEL_ANIM_TIMER_MS = 16;
+
   SVG_DESKTOP_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_PANEL_ICON_COLOR + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
     '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>' +
@@ -263,6 +271,7 @@ begin
   FLastClockSec := -1;
   FLastActiveWin := 0;
   FLastTaskSignature := '';
+  FAnimTimerActive := False;
   FActiveWindow := 0;
 
   if FtIsLibLoaded() and Assigned(ft_screen_get_width) then
@@ -1317,6 +1326,36 @@ begin
   // Sync launcher button toggled state
   if Assigned(FLauncherBtn) and Assigned(FLauncher) then
     FLauncherBtn.Toggled := FLauncher.IsVisible;
+
+  // Drive the launcher's scroll animation, and switch the panel's own timer to
+  // frame rate while it runs.
+  //
+  // Only while the launcher is visible: a hidden launcher has nothing to animate,
+  // so the idle path is untouched. The interval is restored here rather than by the
+  // launcher, so a single component owns the timer.
+  if Assigned(FLauncher) and FLauncher.IsVisible then
+  begin
+    FLauncher.Tick();
+    if Assigned(ft_set_timer) then
+    begin
+      if FLauncher.IsAnimating and not FAnimTimerActive then
+      begin
+        FAnimTimerActive := True;
+        ft_set_timer(PANEL_ANIM_TIMER_MS, @PanelTickCallback, Self);
+      end
+      else if not FLauncher.IsAnimating and FAnimTimerActive then
+      begin
+        FAnimTimerActive := False;
+        ft_set_timer(PANEL_TIMER_MS, @PanelTickCallback, Self);
+      end;
+    end;
+  end
+  else if FAnimTimerActive then
+  begin
+    FAnimTimerActive := False;
+    if Assigned(ft_set_timer) then
+      ft_set_timer(PANEL_TIMER_MS, @PanelTickCallback, Self);
+  end;
 
   // Refresh when EITHER the active window changes OR the set of windows changes.
   //
