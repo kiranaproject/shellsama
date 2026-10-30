@@ -549,6 +549,20 @@ begin
   FWindow.SkipTaskbar := True;
   FWindow.SetPosition(0, py);
 
+  // Render the panel on the software path, deliberately.
+  //
+  // The panel goes blank after another window closes, but only when a compositor
+  // is running and only on the EGL path: with FT_RENDERER=software it never
+  // happens, and with no window manager it never happens either. The panel still
+  // repaints (its widget tree draws every frame) yet its redirected pixmap stays
+  // empty, so the compositor faithfully presents an empty strip. That points at
+  // the EGL surface created before Composite redirects the window.
+  //
+  // Software rendering costs almost nothing here: the panel is 1024x38 and redraws
+  // four times a second, not at frame rate. Windows keep EGL.
+  if Assigned(ft_window_set_hardware_accelerated) then
+    ft_window_set_hardware_accelerated(FWindow.Handle, 0);
+
   // Reserve bottom screen space via _NET_WM_STRUT & _NET_WM_STRUT_PARTIAL
   FWindow.SetStrutPartial(
     0, 0, 0, FPanelHeight,
