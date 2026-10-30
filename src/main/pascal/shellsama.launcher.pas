@@ -661,6 +661,10 @@ begin
   begin
     FSelectedIndex := idx;
     Sender.Invalidate();
+    // A click opens the app. This is a launcher, not a file browser: the previous
+    // implementation launched on a single click, and Spotlight/GNOME do the same,
+    // so requiring a double-click would be a surprise.
+    LaunchCurrentSelection();
   end;
 end;
 
@@ -746,9 +750,17 @@ begin
 end;
 
 procedure TShellLauncher.LaunchCurrentSelection();
+var
+  app: TDesktopApp;
 begin
   if (FSelectedIndex < 0) or (FSelectedIndex >= Length(FCurrentResults)) then Exit;
-  LaunchApp(FCurrentResults[FSelectedIndex]);
+  app := FCurrentResults[FSelectedIndex];
+  // Record the launch so it sorts to the top of the "recent" group next time.
+  // TDesktopAppList.Search puts recent apps first, so skipping this silently
+  // breaks the recents ordering.
+  if Assigned(FAppList) then
+    FAppList.RecordLaunch(app.DesktopId);
+  LaunchApp(app);
 end;
 
 procedure TShellLauncher.HandleItemClick(AButton: TFtButton);
