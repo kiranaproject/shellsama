@@ -32,7 +32,16 @@ type
     Title      : string;
     IsActive   : Boolean;
     IsMinimized: Boolean;
+    IsMaximized: Boolean;
     Button     : TFtButton;
+    // Per-task context menu. One menu per task rather than one shared menu,
+    // because the toolkit pops a widget's own menu and offers no hook before it
+    // opens: a shared menu could not tell which task was right-clicked, and
+    // OnPress only fires for the left button, so it is not a usable hook either.
+    Menu       : TFtPopupMenu;
+    MenuMinimize: TFtMenuItem;
+    MenuMaximize: TFtMenuItem;
+    MenuClose   : TFtMenuItem;
   end;
 
   TShellBottomPanel = class
@@ -54,6 +63,9 @@ type
     FActiveWindow   : Cardinal;
     FLastClockSec   : Integer;
     FLastActiveWin  : Cardinal;
+    // Window-id signature of the task set as of the last refresh. Lets Tick notice
+    // a window appearing or disappearing without a full query every tick.
+    FLastTaskSignature : AnsiString;
 
     // XCB connection details
     FConn           : Pxcb_connection_t;
@@ -67,6 +79,9 @@ type
     FAtomNetWmIcon            : Cardinal;
     FAtomNetWmState           : Cardinal;
     FAtomNetWmStateHidden     : Cardinal;
+    FAtomNetWmStateMaxVert    : Cardinal;
+    FAtomNetWmStateMaxHorz    : Cardinal;
+    FAtomNetCloseWindow       : Cardinal;
     FAtomNetWmStateSkipTaskbar: Cardinal;
     FAtomNetWmWindowType      : Cardinal;
     FAtomNetWmWindowTypeDock  : Cardinal;
@@ -93,11 +108,19 @@ type
     function QueryWindowTitle(AWin: Cardinal): string;
     function ShouldShowTask(AWin: Cardinal): Boolean;
     function IsWindowMinimized(AWin: Cardinal): Boolean;
+    function IsWindowMaximized(AWin: Cardinal): Boolean;
 
     procedure HandleLauncherButtonClick(Sender: TFtButton);
     procedure HandleShowDesktopButtonClick(Sender: TFtButton);
     procedure HandleTaskButtonClick(Sender: TFtButton);
     procedure HandleTrayLayoutChanged(Sender: TObject);
+
+    // Task context menu
+    procedure BuildTaskMenu(var ATask: TTaskItem);
+    procedure UpdateTaskMenuState(var ATask: TTaskItem);
+    procedure HandleTaskMenuMinimize(Sender: TFtMenuItem);
+    procedure HandleTaskMenuMaximize(Sender: TFtMenuItem);
+    procedure HandleTaskMenuClose(Sender: TFtMenuItem);
   public
     constructor Create(ALauncher: TShellLauncher = nil);
     destructor Destroy(); override;
@@ -107,12 +130,19 @@ type
     procedure RefreshTasks();
     procedure UpdateClock();
     procedure Tick();
+    // Cheap signature of the current task set, so the panel can notice a window
+    // appearing or disappearing without a full refresh.
+    function TaskSetSignature(): AnsiString;
 
     function QueryWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
     function GetOrLoadWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
 
     procedure ActivateWindow(AWin: Cardinal);
     procedure MinimizeWindow(AWin: Cardinal);
+    procedure UnminimizeWindow(AWin: Cardinal);
+    procedure MaximizeWindow(AWin: Cardinal);
+    procedure RestoreWindow(AWin: Cardinal);
+    procedure CloseWindow(AWin: Cardinal);
     procedure ToggleShowDesktop();
     procedure OnLauncherClicked();
     procedure OnTaskClicked(AWin: Cardinal);
@@ -232,6 +262,7 @@ begin
   FPanelHeight := 38;
   FLastClockSec := -1;
   FLastActiveWin := 0;
+  FLastTaskSignature := '';
   FActiveWindow := 0;
 
   if FtIsLibLoaded() and Assigned(ft_screen_get_width) then
@@ -292,8 +323,15 @@ begin
   begin
     if Assigned(FTasks[i].Button) then
     begin
+      if Assigned(FTasks[i].Menu) then
+        FTasks[i].Button.ContextMenuHandle := nil;
       FTasks[i].Button.Free();
       FTasks[i].Button := nil;
+    end;
+    if Assigned(FTasks[i].Menu) then
+    begin
+      FTasks[i].Menu.Free();
+      FTasks[i].Menu := nil;
     end;
   end;
   SetLength(FTasks, 0);
@@ -354,6 +392,105 @@ begin
     OnTaskClicked(Cardinal(Sender.Tag));
 end;
 
+// Builds the per-task context menu.
+//
+// One menu per task rather than one shared menu: the toolkit pops a widget's own
+// ContextMenu and gives no hook before it opens, and OnPress only fires for the
+// left button, so a shared menu would have no way to learn which task was
+// right-clicked. The cost is one native popup window per task, created lazily
+// here and freed with the task.
+procedure TShellBottomPanel.BuildTaskMenu(var ATask: TTaskItem);
+var
+  it: TFtMenuItem;
+begin
+  if ATask.Window = 0 then Exit;
+  if Assigned(ATask.Menu) then Exit;
+  if not FtIsLibLoaded() then Exit;
+
+  ATask.Menu := TFtPopupMenu.Create(FWindow);
+  if ATask.Menu = nil then Exit;
+
+  ATask.MenuMinimize := ATask.Menu.AddItem('Minimize', @HandleTaskMenuMinimize);
+  ATask.MenuMaximize := ATask.Menu.AddItem('Maximize', @HandleTaskMenuMaximize);
+  ATask.Menu.AddSeparator();
+  ATask.MenuClose := ATask.Menu.AddItem('Close', @HandleTaskMenuClose);
+
+  // Every item carries the window id, so one handler shape serves all tasks and
+  // the callbacks need no shared mutable state.
+  it := ATask.MenuMinimize;
+  if it <> nil then it.Tag := Int64(ATask.Window);
+  it := ATask.MenuMaximize;
+  if it <> nil then it.Tag := Int64(ATask.Window);
+  it := ATask.MenuClose;
+  if it <> nil then it.Tag := Int64(ATask.Window);
+
+  UpdateTaskMenuState(ATask);
+end;
+
+procedure TShellBottomPanel.UpdateTaskMenuState(var ATask: TTaskItem);
+begin
+  if not Assigned(ATask.Menu) then Exit;
+
+  // Captions reflect current state, the way MATE and KDE do it, so the user is
+  // never offered an action that would do nothing.
+  //
+  // Note: TFtMenuItem.Enabled blocks the click but the toolkit paints enabled and
+  // disabled items identically, so a disabled "Minimize" would look clickable and
+  // silently do nothing. Toggling the caption avoids that entirely.
+  if Assigned(ATask.MenuMinimize) then
+  begin
+    if ATask.IsMinimized then
+      ATask.MenuMinimize.Caption := 'Restore'
+    else
+      ATask.MenuMinimize.Caption := 'Minimize';
+  end;
+
+  if Assigned(ATask.MenuMaximize) then
+  begin
+    if ATask.IsMaximized then
+      ATask.MenuMaximize.Caption := 'Restore'
+    else
+      ATask.MenuMaximize.Caption := 'Maximize';
+  end;
+end;
+
+procedure TShellBottomPanel.HandleTaskMenuMinimize(Sender: TFtMenuItem);
+var
+  win: Cardinal;
+begin
+  if not Assigned(Sender) then Exit;
+  win := Cardinal(Sender.Tag);
+  // Re-read the state rather than trusting the cached flag: the window may have
+  // been minimized or restored since the menu was built.
+  if IsWindowMinimized(win) then
+  begin
+    UnminimizeWindow(win);
+    ActivateWindow(win);
+  end
+  else
+    MinimizeWindow(win);
+end;
+
+procedure TShellBottomPanel.HandleTaskMenuMaximize(Sender: TFtMenuItem);
+var
+  win: Cardinal;
+begin
+  if not Assigned(Sender) then Exit;
+  win := Cardinal(Sender.Tag);
+  // Toggle rather than trusting the cached flag: the window may have been
+  // maximized or restored by its own titlebar since the menu was built.
+  if IsWindowMaximized(win) then
+    RestoreWindow(win)
+  else
+    MaximizeWindow(win);
+end;
+
+procedure TShellBottomPanel.HandleTaskMenuClose(Sender: TFtMenuItem);
+begin
+  if Assigned(Sender) then
+    CloseWindow(Cardinal(Sender.Tag));
+end;
+
 procedure TShellBottomPanel.HandleTrayLayoutChanged(Sender: TObject);
 begin
   LayoutButtons();
@@ -369,6 +506,9 @@ begin
   FAtomNetWmIcon             := InternAtom(FConn, '_NET_WM_ICON');
   FAtomNetWmState            := InternAtom(FConn, '_NET_WM_STATE');
   FAtomNetWmStateHidden      := InternAtom(FConn, '_NET_WM_STATE_HIDDEN');
+  FAtomNetWmStateMaxVert     := InternAtom(FConn, '_NET_WM_STATE_MAXIMIZED_VERT');
+  FAtomNetWmStateMaxHorz     := InternAtom(FConn, '_NET_WM_STATE_MAXIMIZED_HORZ');
+  FAtomNetCloseWindow        := InternAtom(FConn, '_NET_CLOSE_WINDOW');
   FAtomNetWmStateSkipTaskbar := InternAtom(FConn, '_NET_WM_STATE_SKIP_TASKBAR');
   FAtomNetWmWindowType       := InternAtom(FConn, '_NET_WM_WINDOW_TYPE');
   FAtomNetWmWindowTypeDock   := InternAtom(FConn, '_NET_WM_WINDOW_TYPE_DOCK');
@@ -900,6 +1040,39 @@ begin
   end;
 end;
 
+function TShellBottomPanel.IsWindowMaximized(AWin: Cardinal): Boolean;
+var
+  cookie: xcb_get_property_cookie_t;
+  reply: Pxcb_get_property_reply_t;
+  atoms: Pxcb_atom_t;
+  count, i: Integer;
+begin
+  Result := False;
+  if (FConn = nil) or (AWin = 0) or (FAtomNetWmState = 0) then Exit;
+  if (FAtomNetWmStateMaxVert = 0) and (FAtomNetWmStateMaxHorz = 0) then Exit;
+
+  cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmState, XCB_ATOM_ATOM, 0, 64);
+  reply := xcb_get_property_reply(FConn, cookie, nil);
+  if reply = nil then Exit;
+
+  try
+    count := xcb_get_property_value_length(reply) div SizeOf(xcb_atom_t);
+    if count > 0 then
+    begin
+      atoms := Pxcb_atom_t(xcb_get_property_value(reply));
+      for i := 0 to count - 1 do
+      begin
+        // Either axis counts as maximized for menu purposes: the WM sets both,
+        // and a half-maximized window should still offer "Restore".
+        if (atoms[i] = FAtomNetWmStateMaxVert) or (atoms[i] = FAtomNetWmStateMaxHorz) then
+          Exit(True);
+      end;
+    end;
+  finally
+    c_free(reply);
+  end;
+end;
+
 procedure TShellBottomPanel.RefreshTasks();
 var
   rawWins: array of Cardinal;
@@ -932,6 +1105,7 @@ begin
     FTasks[i].Window := validWins[i];
     FTasks[i].IsActive := (validWins[i] = FActiveWindow);
     FTasks[i].IsMinimized := IsWindowMinimized(validWins[i]);
+    FTasks[i].IsMaximized := IsWindowMaximized(validWins[i]);
 
     // Check if previously existed
     found := False;
@@ -941,7 +1115,12 @@ begin
       begin
         FTasks[i].Title := oldTasks[j].Title;
         FTasks[i].Button := oldTasks[j].Button;
+        FTasks[i].Menu := oldTasks[j].Menu;
+        FTasks[i].MenuMinimize := oldTasks[j].MenuMinimize;
+        FTasks[i].MenuMaximize := oldTasks[j].MenuMaximize;
+        FTasks[i].MenuClose := oldTasks[j].MenuClose;
         oldTasks[j].Button := nil; // transfer ownership
+        oldTasks[j].Menu := nil;
         found := True;
         Break;
       end;
@@ -953,7 +1132,15 @@ begin
     FTasks[i].Title := title;
 
     if not found then
+    begin
+      // SetLength reuses the array, so an overwritten slot still holds the old
+      // record's pointers. Clear them or the panel would free a menu twice.
       FTasks[i].Button := nil;
+      FTasks[i].Menu := nil;
+      FTasks[i].MenuMinimize := nil;
+      FTasks[i].MenuMaximize := nil;
+      FTasks[i].MenuClose := nil;
+    end;
   end;
 
   // Destroy remaining unused buttons
@@ -961,8 +1148,17 @@ begin
   begin
     if Assigned(oldTasks[j].Button) then
     begin
+      // Detach before freeing: the button holds a raw pointer to the menu and
+      // must not outlive it.
+      if Assigned(oldTasks[j].Menu) then
+        oldTasks[j].Button.ContextMenuHandle := nil;
       oldTasks[j].Button.Free();
       oldTasks[j].Button := nil;
+    end;
+    if Assigned(oldTasks[j].Menu) then
+    begin
+      oldTasks[j].Menu.Free();
+      oldTasks[j].Menu := nil;
     end;
   end;
 
@@ -989,6 +1185,14 @@ begin
     end
     else
       Inc(i);
+  end;
+
+  // Every task gets a context menu, and its captions are refreshed here so a
+  // window maximized via its own titlebar is still offered "Restore".
+  for i := 0 to High(FTasks) do
+  begin
+    BuildTaskMenu(FTasks[i]);
+    UpdateTaskMenuState(FTasks[i]);
   end;
 
   LayoutButtons();
@@ -1020,7 +1224,14 @@ begin
   availW := Max(100, endX - startX);
   numTasks := Length(FTasks);
 
-  if numTasks = 0 then Exit;
+  if numTasks = 0 then
+  begin
+    // Nothing to lay out, but the area still has to be repainted: the last task's
+    // button was just freed and its pixels would otherwise stay on screen.
+    if FWindow <> nil then
+      FWindow.Invalidate();
+    Exit;
+  end;
 
   btnW := Min(160, Max(70, (availW - (numTasks - 1) * 4) div numTasks));
 
@@ -1051,6 +1262,11 @@ begin
       FTasks[i].Button.PaddingX := 8.0;
     end;
 
+    // Right-click on the task button opens its context menu. The toolkit walks up
+    // from the hit widget to find this, so it must be attached to the button.
+    if Assigned(FTasks[i].Menu) then
+      FTasks[i].Button.ContextMenuHandle := FTasks[i].Menu.Handle;
+
     if Assigned(iconBmp) then
     begin
       FTasks[i].Button.SetIconBitmap(iconBmp, False);
@@ -1062,6 +1278,14 @@ begin
 
     FTasks[i].Button.Toggled := FTasks[i].IsActive;
   end;
+
+  // Repaint the task area explicitly.
+  //
+  // Freeing a task button does not invalidate the panel: the button is gone before
+  // the parent is asked to redraw, so its pixels stay on screen as a ghost. With
+  // several tasks closing at once the whole strip ends up showing dead buttons.
+  if FWindow <> nil then
+    FWindow.Invalidate();
 end;
 
 procedure TShellBottomPanel.UpdateClock();
@@ -1083,6 +1307,7 @@ end;
 procedure TShellBottomPanel.Tick();
 var
   curActive: Cardinal;
+  sig: AnsiString;
 begin
   UpdateClock();
 
@@ -1093,12 +1318,44 @@ begin
   if Assigned(FLauncherBtn) and Assigned(FLauncher) then
     FLauncherBtn.Toggled := FLauncher.IsVisible;
 
-  // Check if active window changed
+  // Refresh when EITHER the active window changes OR the set of windows changes.
+  //
+  // Watching only the active window (the original behaviour) left the taskbar
+  // stale whenever a window that was not active disappeared: its button stayed,
+  // pointing at a dead window id. Closing a window from the task menu made that
+  // very visible - the button remained and clicking it did nothing.
+  sig := TaskSetSignature();
+  if sig <> FLastTaskSignature then
+  begin
+    FLastTaskSignature := sig;
+    FLastActiveWin := QueryActiveWindow();
+    RefreshTasks();
+    Exit;
+  end;
+
   curActive := QueryActiveWindow();
   if curActive <> FLastActiveWin then
   begin
     FLastActiveWin := curActive;
     RefreshTasks();
+  end;
+end;
+
+// Identity of the current task set, cheap enough to compute every tick.
+//
+// Built from the window ids only: titles and states change far more often than
+// the set itself, and those are handled by RefreshTasks' own state refresh.
+function TShellBottomPanel.TaskSetSignature(): AnsiString;
+var
+  wins: array of Cardinal;
+  i: Integer;
+begin
+  wins := QueryClientList();
+  Result := '';
+  for i := 0 to High(wins) do
+  begin
+    if not ShouldShowTask(wins[i]) then Continue;
+    Result := Result + IntToHex(QWord(wins[i]), 8) + ',';
   end;
 end;
 
@@ -1191,6 +1448,104 @@ begin
                    PAnsiChar(@ev));
   end;
 
+  xcb_flush(FConn);
+end;
+
+procedure TShellBottomPanel.UnminimizeWindow(AWin: Cardinal);
+var
+  ev: xcb_client_message_event_t;
+  data32: PCardinalArray;
+begin
+  if (FConn = nil) or (AWin = 0) or (FAtomNetWmState = 0) or (FAtomNetWmStateHidden = 0) then Exit;
+
+  // _NET_WM_STATE_REMOVE of _NET_WM_STATE_HIDDEN. The WM maps the window and
+  // clears the flag; the caller also activates, because unminimizing alone does
+  // not raise or focus on every window manager.
+  FillChar(ev, SizeOf(ev), 0);
+  ev.response_type := XCB_CLIENT_MESSAGE;
+  ev.format := 32;
+  ev.window := AWin;
+  ev.type_ := FAtomNetWmState;
+  data32 := PCardinalArray(@ev.data.raw[0]);
+  data32^[0] := 0; // _NET_WM_STATE_REMOVE
+  data32^[1] := FAtomNetWmStateHidden;
+  data32^[2] := 0;
+  data32^[3] := 2; // source indication: pager
+  xcb_send_event(FConn, 0, FRootWindow,
+                 XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT or XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                 PAnsiChar(@ev));
+  xcb_flush(FConn);
+end;
+
+procedure TShellBottomPanel.MaximizeWindow(AWin: Cardinal);
+var
+  ev: xcb_client_message_event_t;
+  data32: PCardinalArray;
+begin
+  if (FConn = nil) or (AWin = 0) or (FAtomNetWmState = 0) then Exit;
+
+  // _NET_WM_STATE_ADD with both maximized atoms. The WM only checks that either
+  // atom appears in the property list, so one message is enough.
+  FillChar(ev, SizeOf(ev), 0);
+  ev.response_type := XCB_CLIENT_MESSAGE;
+  ev.format := 32;
+  ev.window := AWin;
+  ev.type_ := FAtomNetWmState;
+  data32 := PCardinalArray(@ev.data.raw[0]);
+  data32^[0] := 1; // _NET_WM_STATE_ADD
+  data32^[1] := FAtomNetWmStateMaxVert;
+  data32^[2] := FAtomNetWmStateMaxHorz;
+  data32^[3] := 2; // source indication: pager
+  xcb_send_event(FConn, 0, FRootWindow,
+                 XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT or XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                 PAnsiChar(@ev));
+  xcb_flush(FConn);
+end;
+
+procedure TShellBottomPanel.RestoreWindow(AWin: Cardinal);
+var
+  ev: xcb_client_message_event_t;
+  data32: PCardinalArray;
+begin
+  if (FConn = nil) or (AWin = 0) or (FAtomNetWmState = 0) then Exit;
+
+  FillChar(ev, SizeOf(ev), 0);
+  ev.response_type := XCB_CLIENT_MESSAGE;
+  ev.format := 32;
+  ev.window := AWin;
+  ev.type_ := FAtomNetWmState;
+  data32 := PCardinalArray(@ev.data.raw[0]);
+  data32^[0] := 0; // _NET_WM_STATE_REMOVE
+  data32^[1] := FAtomNetWmStateMaxVert;
+  data32^[2] := FAtomNetWmStateMaxHorz;
+  data32^[3] := 2;
+  xcb_send_event(FConn, 0, FRootWindow,
+                 XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT or XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                 PAnsiChar(@ev));
+  xcb_flush(FConn);
+end;
+
+procedure TShellBottomPanel.CloseWindow(AWin: Cardinal);
+var
+  ev: xcb_client_message_event_t;
+  data32: PCardinalArray;
+begin
+  if (FConn = nil) or (AWin = 0) or (FAtomNetCloseWindow = 0) then Exit;
+
+  // _NET_CLOSE_WINDOW asks the WM to close the window politely, which lets the
+  // application prompt about unsaved work. Deliberately not xcb_kill_client:
+  // that would terminate the connection and lose the user's data.
+  FillChar(ev, SizeOf(ev), 0);
+  ev.response_type := XCB_CLIENT_MESSAGE;
+  ev.format := 32;
+  ev.window := AWin;
+  ev.type_ := FAtomNetCloseWindow;
+  data32 := PCardinalArray(@ev.data.raw[0]);
+  data32^[0] := 2; // source indication: pager
+  data32^[1] := XCB_CURRENT_TIME;
+  xcb_send_event(FConn, 0, FRootWindow,
+                 XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT or XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                 PAnsiChar(@ev));
   xcb_flush(FConn);
 end;
 
