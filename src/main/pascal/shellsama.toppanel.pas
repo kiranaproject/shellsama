@@ -67,8 +67,11 @@ type
     function PanelY(): Integer;
     function PanelWidth(): Integer;
     function PanelHeight(): Integer;
+    function GetBackgroundOpacity(): Double;
+    procedure SetBackgroundOpacity(AValue: Double);
 
     property IsVisible       : Boolean          read FIsVisible;
+    property BackgroundOpacity: Double          read GetBackgroundOpacity write SetBackgroundOpacity;
     property WindowWidget    : TFtWindow        read FWindow;
     property LauncherWidget  : TFtButton        read FLauncherBtn;
     property ClockWidget     : TFtLabel         read FClockText;
@@ -285,6 +288,7 @@ begin
   FWindow.Borderless := True;
   FWindow.SkipTaskbar := True;
   FWindow.SetPosition(0, py);
+  FWindow.BackgroundOpacity := 0.85;
 
   // Reserve top screen space via _NET_WM_STRUT & _NET_WM_STRUT_PARTIAL
   FWindow.SetStrutPartial(
@@ -352,6 +356,20 @@ end;
 function TShellTopPanel.PanelHeight(): Integer;
 begin
   Result := FPanelHeight;
+end;
+
+function TShellTopPanel.GetBackgroundOpacity(): Double;
+begin
+  if Assigned(FWindow) then
+    Result := FWindow.BackgroundOpacity
+  else
+    Result := 0.85;
+end;
+
+procedure TShellTopPanel.SetBackgroundOpacity(AValue: Double);
+begin
+  if Assigned(FWindow) then
+    FWindow.BackgroundOpacity := AValue;
 end;
 
 procedure TShellTopPanel.Show();
