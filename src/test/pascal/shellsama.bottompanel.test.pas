@@ -74,6 +74,8 @@ begin
   AssertEquals('Panel Y must be at bottom of screen', sh - 38, FPanel.PanelY());
   AssertEquals('Panel Width must match screen width', sw, FPanel.PanelWidth());
   AssertEquals('Panel Height must be 38', 38, FPanel.PanelHeight());
+  AssertEquals('Panel background opacity must be 0.90', 0.90, FPanel.BackgroundOpacity, 0.001);
+  AssertEquals('Window widget background opacity must be 0.90', 0.90, FPanel.WindowWidget.BackgroundOpacity, 0.001);
 end;
 
 procedure TBottomPanelTest.TestWidgetsInitialized();

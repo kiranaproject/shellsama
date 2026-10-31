@@ -288,7 +288,7 @@ begin
   FWindow.Borderless := True;
   FWindow.SkipTaskbar := True;
   FWindow.SetPosition(0, py);
-  FWindow.BackgroundOpacity := 0.85;
+  FWindow.BackgroundOpacity := 0.50;
 
   // Reserve top screen space via _NET_WM_STRUT & _NET_WM_STRUT_PARTIAL
   FWindow.SetStrutPartial(
@@ -363,7 +363,7 @@ begin
   if Assigned(FWindow) then
     Result := FWindow.BackgroundOpacity
   else
-    Result := 0.85;
+    Result := 0.50;
 end;
 
 procedure TShellTopPanel.SetBackgroundOpacity(AValue: Double);

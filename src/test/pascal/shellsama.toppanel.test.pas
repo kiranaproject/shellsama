@@ -75,8 +75,8 @@ begin
   AssertEquals('Panel Y must be at top of screen (0)', 0, FPanel.PanelY());
   AssertEquals('Panel Width must match screen width', sw, FPanel.PanelWidth());
   AssertEquals('Panel Height must be 38', 38, FPanel.PanelHeight());
-  AssertEquals('Panel background opacity must be 0.85 (15% transparent)', 0.85, FPanel.BackgroundOpacity, 0.001);
-  AssertEquals('Window widget background opacity must be 0.85', 0.85, FPanel.WindowWidget.BackgroundOpacity, 0.001);
+  AssertEquals('Panel background opacity must be 0.50', 0.50, FPanel.BackgroundOpacity, 0.001);
+  AssertEquals('Window widget background opacity must be 0.50', 0.50, FPanel.WindowWidget.BackgroundOpacity, 0.001);
 end;
 
 procedure TTopPanelTest.TestWidgetsInitialized();

@@ -137,8 +137,11 @@ type
     function GetTaskCount(): Integer;
     function GetIconCacheCount(): Integer;
     function GetTaskIcon(AIndex: Integer): TFtBitmap;
+    function GetBackgroundOpacity(): Double;
+    procedure SetBackgroundOpacity(AValue: Double);
 
     property IsVisible     : Boolean         read FIsVisible;
+    property BackgroundOpacity: Double       read GetBackgroundOpacity write SetBackgroundOpacity;
     property ActiveWindow  : Cardinal        read FActiveWindow;
     property TaskCount     : Integer         read GetTaskCount;
     property IconCacheCount: Integer         read GetIconCacheCount;
@@ -424,6 +427,7 @@ begin
   FWindow.Borderless := True;
   FWindow.SkipTaskbar := True;
   FWindow.SetPosition(0, py);
+  FWindow.BackgroundOpacity := 0.90;
 
   // Reserve bottom screen space via _NET_WM_STRUT & _NET_WM_STRUT_PARTIAL
   FWindow.SetStrutPartial(
@@ -476,6 +480,20 @@ begin
   Result := nil;
   if (AIndex >= 0) and (AIndex < Length(FTasks)) then
     Result := GetOrLoadWindowIcon(FTasks[AIndex].Window, 18);
+end;
+
+function TShellBottomPanel.GetBackgroundOpacity(): Double;
+begin
+  if Assigned(FWindow) then
+    Result := FWindow.BackgroundOpacity
+  else
+    Result := 0.90;
+end;
+
+procedure TShellBottomPanel.SetBackgroundOpacity(AValue: Double);
+begin
+  if Assigned(FWindow) then
+    FWindow.BackgroundOpacity := AValue;
 end;
 
 procedure TShellBottomPanel.Show();
