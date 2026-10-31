@@ -158,6 +158,7 @@ begin
   FQueryBusy := False;
 
   FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
+  FButton.Flat := True;
   FButton.CornerRadius := 6.0;
   FButton.IconPosition := ftipOnly;
   FButton.SetIconSize(18, 18);
@@ -507,6 +508,7 @@ begin
   FPanelWindow := AParentWindow;
 
   FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
+  FButton.Flat := True;
   FButton.CornerRadius := 6.0;
   FButton.IconPosition := ftipOnly;
   FButton.SetIconSize(18, 18);

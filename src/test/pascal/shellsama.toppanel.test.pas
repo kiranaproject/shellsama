@@ -85,6 +85,7 @@ begin
 
   // 1. Launcher button on the left
   AssertNotNull('Launcher button must be created', FPanel.LauncherWidget);
+  AssertTrue('Launcher button must be flat (borderless when idle)', FPanel.LauncherWidget.Flat);
   AssertEquals('Launcher button caption must be Samarinda', 'Samarinda', FPanel.LauncherWidget.Caption);
   AssertEquals('Launcher button icon position must be ftipLeft', Ord(ftipLeft), Ord(FPanel.LauncherWidget.IconPosition));
   FPanel.LauncherWidget.GetIconSize(iconW, iconH);
@@ -94,6 +95,7 @@ begin
 
   // 2. Desktop button on the right
   AssertNotNull('Show desktop button must be created', FPanel.ShowDesktopWidget);
+  AssertTrue('Show desktop button must be flat (borderless when idle)', FPanel.ShowDesktopWidget.Flat);
 
   // 3. Clock text label
   AssertNotNull('Clock text widget must be created', FPanel.ClockWidget);
@@ -103,9 +105,13 @@ begin
 
   // 5. Volume applet
   AssertNotNull('Volume applet must be created', FPanel.VolumeApplet);
+  AssertNotNull('Volume applet button must be created', FPanel.VolumeApplet.Button);
+  AssertTrue('Volume applet button must be flat (borderless when idle)', FPanel.VolumeApplet.Button.Flat);
 
   // 6. Session applet (shutdown button)
   AssertNotNull('Session applet must be created', FPanel.SessionApplet);
+  AssertNotNull('Session applet button must be created', FPanel.SessionApplet.Button);
+  AssertTrue('Session applet button must be flat (borderless when idle)', FPanel.SessionApplet.Button.Flat);
 end;
 
 procedure TTopPanelTest.TestPanelVisibilityToggle();

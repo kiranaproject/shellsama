@@ -294,8 +294,9 @@ begin
   );
 
   // 1. Launcher button on the left
-  FLauncherBtn := TFtButton.Create(FWindow, 6, 3, 118, 32, 'Samarinda');
+  FLauncherBtn := TFtButton.Create(FWindow, 6, 3, 128, 32, 'Samarinda');
   FLauncherBtn.IsToggle := True;
+  FLauncherBtn.Flat := True;
   FLauncherBtn.CornerRadius := 6.0;
   FLauncherBtn.IconPosition := ftipLeft;
   FLauncherBtn.SetIconSize(22, 22);
@@ -305,6 +306,7 @@ begin
 
   // 2. Show Desktop button on the extreme right
   FShowDesktopBtn := TFtButton.Create(FWindow, FPanelWidth - 36, 3, 32, 32, '');
+  FShowDesktopBtn.Flat := True;
   FShowDesktopBtn.CornerRadius := 6.0;
   FShowDesktopBtn.IconPosition := ftipOnly;
   FShowDesktopBtn.SetIconSize(18, 18);
