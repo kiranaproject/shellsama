@@ -78,6 +78,8 @@ begin
 end;
 
 procedure TTopPanelTest.TestWidgetsInitialized();
+var
+  iconW, iconH: Integer;
 begin
   AssertNotNull('Window widget must be created', FPanel.WindowWidget);
 
@@ -85,6 +87,9 @@ begin
   AssertNotNull('Launcher button must be created', FPanel.LauncherWidget);
   AssertEquals('Launcher button caption must be Samarinda', 'Samarinda', FPanel.LauncherWidget.Caption);
   AssertEquals('Launcher button icon position must be ftipLeft', Ord(ftipLeft), Ord(FPanel.LauncherWidget.IconPosition));
+  FPanel.LauncherWidget.GetIconSize(iconW, iconH);
+  AssertEquals('Launcher button icon width must be 22', 22, iconW);
+  AssertEquals('Launcher button icon height must be 22', 22, iconH);
   AssertNotNull('Launcher button icon must be loaded', ft_button_get_icon_bitmap(FPanel.LauncherWidget.Handle));
 
   // 2. Desktop button on the right
