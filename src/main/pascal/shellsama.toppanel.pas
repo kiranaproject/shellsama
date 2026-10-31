@@ -294,7 +294,7 @@ begin
   );
 
   // 1. Launcher button on the left
-  FLauncherBtn := TFtButton.Create(FWindow, 6, 3, 128, 32, 'Samarinda');
+  FLauncherBtn := TFtButton.Create(FWindow, 6, 3, 80, 32, 'Find');
   FLauncherBtn.IsToggle := True;
   FLauncherBtn.Flat := True;
   FLauncherBtn.CornerRadius := 6.0;

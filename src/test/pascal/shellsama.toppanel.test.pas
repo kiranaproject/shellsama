@@ -86,7 +86,7 @@ begin
   // 1. Launcher button on the left
   AssertNotNull('Launcher button must be created', FPanel.LauncherWidget);
   AssertTrue('Launcher button must be flat (borderless when idle)', FPanel.LauncherWidget.Flat);
-  AssertEquals('Launcher button caption must be Samarinda', 'Samarinda', FPanel.LauncherWidget.Caption);
+  AssertEquals('Launcher button caption must be Find', 'Find', FPanel.LauncherWidget.Caption);
   AssertEquals('Launcher button icon position must be ftipLeft', Ord(ftipLeft), Ord(FPanel.LauncherWidget.IconPosition));
   FPanel.LauncherWidget.GetIconSize(iconW, iconH);
   AssertEquals('Launcher button icon width must be 22', 22, iconW);
