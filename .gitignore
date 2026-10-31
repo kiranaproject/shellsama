@@ -18,3 +18,4 @@ lib/
 *.bak
 *.orig
 .DS_Store
+scratch/

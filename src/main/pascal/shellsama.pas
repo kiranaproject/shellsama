@@ -12,15 +12,18 @@ uses
   ShellSama.Panel,
   ShellSama.DesktopApps,
   ShellSama.Launcher,
+  ShellSama.TopPanel,
   ShellSama.BottomPanel,
   ShellSama.Desktop;
 
 var
   Panel: TShellPanel;
   Launcher: TShellLauncher;
+  TopPanel: TShellTopPanel;
   BottomPanel: TShellBottomPanel;
   Desktop: TShellDesktop;
   AutoShowLauncher: Boolean;
+  NoTopPanel: Boolean;
   NoBottomPanel: Boolean;
   NoDesktop: Boolean;
   CustomWallpaper: string;
@@ -31,6 +34,7 @@ begin
   WriteLn('shellsama — Samarinda Desktop Shell');
 
   AutoShowLauncher := False;
+  NoTopPanel := False;
   NoBottomPanel := False;
   NoDesktop := False;
   CustomWallpaper := '';
@@ -48,6 +52,7 @@ begin
       WriteLn('Usage: shellsama [options]');
       WriteLn('Options:');
       WriteLn('  --show-launcher        Show the application launcher immediately on start');
+      WriteLn('  --no-top-panel         Do not display the top status bar panel');
       WriteLn('  --no-bottom-panel      Do not display the bottom taskbar panel');
       WriteLn('  --no-desktop           Do not display the desktop wallpaper surface');
       WriteLn('  --wallpaper <path>     Load and display the specified wallpaper image');
@@ -58,6 +63,10 @@ begin
     else if arg = '--show-launcher' then
     begin
       AutoShowLauncher := True;
+    end
+    else if arg = '--no-top-panel' then
+    begin
+      NoTopPanel := True;
     end
     else if arg = '--no-bottom-panel' then
     begin
@@ -115,6 +124,16 @@ begin
         WriteLn('Application Launcher ready (Super key toggles launcher)');
         WriteLn('Loaded ', Launcher.AppList.AppCount(), ' desktop application(s)');
 
+        if not NoTopPanel then
+        begin
+          TopPanel := TShellTopPanel.Create(Launcher);
+          TopPanel.Show();
+          WriteLn('Top Panel ready at (', TopPanel.PanelX(), ', ', TopPanel.PanelY(), ') ',
+                  TopPanel.PanelWidth(), 'x', TopPanel.PanelHeight(), ' px');
+        end
+        else
+          TopPanel := nil;
+
         if not NoBottomPanel then
         begin
           BottomPanel := TShellBottomPanel.Create(Launcher);
@@ -133,6 +152,8 @@ begin
         finally
           if Assigned(BottomPanel) then
             BottomPanel.Free();
+          if Assigned(TopPanel) then
+            TopPanel.Free();
         end;
       finally
         Launcher.Free();

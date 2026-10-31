@@ -347,7 +347,10 @@ begin
   if Assigned(FButton) and Assigned(FPanelWindow) then
   begin
     popX := Max(10, FButton.X - (popW - FButton.Width) div 2);
-    popY := FPanelWindow.Y - popH - 4;
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
   end
   else
   begin
@@ -551,7 +554,10 @@ begin
   if Assigned(FButton) and Assigned(FPanelWindow) then
   begin
     menuX := Max(10, FButton.X - 120);
-    menuY := FPanelWindow.Y - 170;
+    if FPanelWindow.Y < 100 then
+      menuY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      menuY := FPanelWindow.Y - 170;
   end
   else
   begin

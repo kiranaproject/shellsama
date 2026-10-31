@@ -22,8 +22,6 @@ type
     procedure TestPanelCreationAndGeometry();
     procedure TestWidgetsInitialized();
     procedure TestPanelVisibilityToggle();
-    procedure TestClockUpdate();
-    procedure TestLauncherSync();
     procedure TestTickExecution();
     procedure TestWindowIconQueryAndCache();
   end;
@@ -81,14 +79,7 @@ end;
 procedure TBottomPanelTest.TestWidgetsInitialized();
 begin
   AssertNotNull('Window widget must be created', FPanel.WindowWidget);
-  AssertNotNull('Launcher button must be created', FPanel.LauncherWidget);
-  AssertEquals('Launcher button caption must be Samarinda', 'Samarinda', FPanel.LauncherWidget.Caption);
-  AssertEquals('Launcher button icon position must be ftipLeft', Ord(ftipLeft), Ord(FPanel.LauncherWidget.IconPosition));
-  AssertNotNull('Launcher button icon must be loaded', ft_button_get_icon_bitmap(FPanel.LauncherWidget.Handle));
-  AssertNotNull('Clock text widget must be created', FPanel.ClockWidget);
-  AssertNotNull('Tray widget must be created', FPanel.TrayWidget);
-  AssertNotNull('Volume applet must be created', FPanel.VolumeApplet);
-  AssertNotNull('Session applet must be created', FPanel.SessionApplet);
+  AssertTrue('Task count is non-negative', FPanel.TaskCount >= 0);
 end;
 
 procedure TBottomPanelTest.TestPanelVisibilityToggle();
@@ -102,29 +93,9 @@ begin
   AssertFalse('Panel should be hidden after Hide()', FPanel.IsVisible);
 end;
 
-procedure TBottomPanelTest.TestClockUpdate();
-begin
-  // UpdateClock should run without exception
-  FPanel.UpdateClock();
-  AssertNotNull('Clock widget still valid', FPanel.ClockWidget);
-end;
-
-procedure TBottomPanelTest.TestLauncherSync();
-begin
-  AssertFalse('Launcher should start hidden', FLauncher.IsVisible);
-
-  // Click launcher from bottom panel
-  FPanel.OnLauncherClicked();
-  AssertTrue('Launcher should now be visible after bottom panel launcher clicked', FLauncher.IsVisible);
-
-  // Toggle off
-  FPanel.OnLauncherClicked();
-  AssertFalse('Launcher should now be hidden after second click', FLauncher.IsVisible);
-end;
-
 procedure TBottomPanelTest.TestTickExecution();
 begin
-  // Tick should handle clock and task checks gracefully
+  // Tick should handle task checks gracefully
   FPanel.Tick();
   AssertNotNull('Panel remains valid after Tick', FPanel);
 end;
