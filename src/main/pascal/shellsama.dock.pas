@@ -28,7 +28,6 @@ type
   private
     FIconSize    : Integer;
     FMaxDockWidth: Integer;
-    FRebuilding   : Boolean;
   protected
     function WindowTitle(): string; override;
     procedure SetupWindow(); override;
@@ -173,22 +172,16 @@ begin
   // The plate is as wide as its contents. Resize in place rather than recreating the
   // window: a destroyed window drops its strut, and every maximized client on the
   // desktop then expands into the gap and snaps back when the replacement maps.
-  // Resizing from inside the layout pass would re-enter (SetupWindow calls
-  // RefreshTasks, which calls this), so the resize is guarded and re-run once.
+  //
+  // Resize and then carry on laying out in the SAME pass. An earlier version resized
+  // and returned, on the reasoning that the resize would re-enter the layout. It does
+  // not -- ResizeWindow only resizes, repositions and invalidates -- so nothing ever
+  // laid out the new buttons: every task after the first kept a nil or stale Button
+  // until some unrelated refresh happened to run at the new width. That showed up as
+  // the newest icon missing and the row being unclickable.
   wantW := DesiredWidth();
   if wantW <> FPanelWidth then
-  begin
-    if not FRebuilding then
-    begin
-      FRebuilding := True;
-      try
-        ResizeWindow(wantW, DOCK_HEIGHT, (ScreenWidthHint() - wantW) div 2);
-      finally
-        FRebuilding := False;
-      end;
-    end;
-    Exit;
-  end;
+    ResizeWindow(wantW, DOCK_HEIGHT, (ScreenWidthHint() - wantW) div 2);
 
   if count = 0 then
   begin
