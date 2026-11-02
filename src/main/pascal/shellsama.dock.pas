@@ -84,11 +84,13 @@ end;
 
 procedure TShellDock.SetupWindow();
 const
+  // Only declarations the window paint path honours: a background colour and a
+  // border radius. The radius leaves the corners unpainted, so they show the
+  // desktop through them -- that is the whole of the rounded look, and it needs a
+  // compositor. No border: window borders are not drawn by the toolkit.
   DOCK_PLATE_CSS =
     'background-color: rgba(24, 24, 32, 0.82);' +
-    'border-radius: 18px;' +
-    'border-width: 1px;' +
-    'border-color: rgba(255, 255, 255, 0.10);';
+    'border-radius: 18px;';
 begin
   inherited SetupWindow();
   if FWindow = nil then Exit;
