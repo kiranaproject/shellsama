@@ -9,6 +9,7 @@ uses
   ShellSama.Launcher.Test,
   ShellSama.TopPanel.Test,
   ShellSama.BottomPanel.Test,
+  ShellSama.Dock.Test,
   ShellSama.Desktop.Test,
   ShellSama.Tray.Test,
   ShellSama.Applets.Test;

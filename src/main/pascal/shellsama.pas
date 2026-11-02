@@ -14,6 +14,7 @@ uses
   ShellSama.Launcher,
   ShellSama.TopPanel,
   ShellSama.BottomPanel,
+  ShellSama.Dock,
   ShellSama.Desktop;
 
 var
@@ -21,10 +22,12 @@ var
   Launcher: TShellLauncher;
   TopPanel: TShellTopPanel;
   BottomPanel: TShellBottomPanel;
+  Dock: TShellDock;
   Desktop: TShellDesktop;
   AutoShowLauncher: Boolean;
   NoTopPanel: Boolean;
   NoBottomPanel: Boolean;
+  UseDock: Boolean;
   NoDesktop: Boolean;
   CustomWallpaper: string;
   i: Integer;
@@ -36,6 +39,7 @@ begin
   AutoShowLauncher := False;
   NoTopPanel := False;
   NoBottomPanel := False;
+  UseDock := False;
   NoDesktop := False;
   CustomWallpaper := '';
   i := 1;
@@ -54,6 +58,7 @@ begin
       WriteLn('  --show-launcher        Show the application launcher immediately on start');
       WriteLn('  --no-top-panel         Do not display the top status bar panel');
       WriteLn('  --no-bottom-panel      Do not display the bottom taskbar panel');
+      WriteLn('  --dock                 Replace the bottom taskbar with an icon dock');
       WriteLn('  --no-desktop           Do not display the desktop wallpaper surface');
       WriteLn('  --wallpaper <path>     Load and display the specified wallpaper image');
       WriteLn('  --version, -v          Print version and exit');
@@ -71,6 +76,10 @@ begin
     else if arg = '--no-bottom-panel' then
     begin
       NoBottomPanel := True;
+    end
+    else if arg = '--dock' then
+    begin
+      UseDock := True;
     end
     else if arg = '--no-desktop' then
     begin
@@ -134,15 +143,26 @@ begin
         else
           TopPanel := nil;
 
-        if not NoBottomPanel then
+        Dock := nil;
+        if NoBottomPanel then
+          BottomPanel := nil
+        else if UseDock then
+        begin
+          // Bit-compatible: TShellDock descends from TShellBottomPanel, so the
+          // tear-down path below is shared and cannot be forgotten.
+          Dock := TShellDock.Create(Launcher);
+          BottomPanel := Dock;
+          BottomPanel.Show();
+          WriteLn('Dock ready at (', BottomPanel.PanelX(), ', ', BottomPanel.PanelY(), ') ',
+                  BottomPanel.PanelWidth(), 'x', BottomPanel.PanelHeight(), ' px');
+        end
+        else
         begin
           BottomPanel := TShellBottomPanel.Create(Launcher);
           BottomPanel.Show();
           WriteLn('Bottom Panel & Taskbar ready at (', BottomPanel.PanelX(), ', ', BottomPanel.PanelY(), ') ',
                   BottomPanel.PanelWidth(), 'x', BottomPanel.PanelHeight(), ' px');
-        end
-        else
-          BottomPanel := nil;
+        end;
 
         try
           if AutoShowLauncher then
