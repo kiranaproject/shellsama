@@ -42,8 +42,13 @@ type
     MenuClose   : TFtMenuItem;
   end;
 
-  TShellBottomPanel = class
-  private
+  // A shell surface that lists tasks: the bottom taskbar and the dock both are
+  // one. The EWMH plumbing below (client list, titles, icons, state, window
+  // actions) is identical between them and is several hundred lines; a dock
+  // implemented as a copy would drift from the taskbar the first time either
+  // changed.
+  TShellTaskSurface = class
+  protected
     FWindow         : TFtWindow;
     FLauncher       : TShellLauncher;
     FIsVisible      : Boolean;
@@ -89,26 +94,41 @@ type
     // Window icon cache
     FWindowIconCache          : array of TWindowIconItem;
 
+
+
+    // Task context menu
+  protected
     procedure InitAtoms();
-    procedure SetupWindow();
-    procedure LayoutButtons();
+    procedure SetupWindow(); virtual;
+    // Lays out one button per task. Virtual so a different presentation (icons
+    // only, centred, no captions) can replace it without touching the task model.
+    procedure LayoutButtons(); virtual;
     function QueryClientList(): TWindowIdArray;
     function QueryActiveWindow(): Cardinal;
     function QueryWindowTitle(AWin: Cardinal): string;
     function ShouldShowTask(AWin: Cardinal): Boolean;
     function IsWindowMinimized(AWin: Cardinal): Boolean;
     function IsWindowMaximized(AWin: Cardinal): Boolean;
+    procedure HandleTaskButtonClick(Sender: TFtButton); virtual;
 
-    procedure HandleTaskButtonClick(Sender: TFtButton);
+    // Window title, so a dock is identifiable in a window list.
+    function WindowTitle(): string; virtual;
+    // Destroy and recreate the panel window, keeping the task set. Needed because a
+    // window's size is fixed when it is created: a surface whose width follows its
+    // contents has to be rebuilt when the contents change size.
+    procedure RebuildWindow();
 
-    // Task context menu
+  private
     procedure BuildTaskMenu(var ATask: TTaskItem);
     procedure UpdateTaskMenuState(var ATask: TTaskItem);
     procedure HandleTaskMenuMinimize(Sender: TFtMenuItem);
     procedure HandleTaskMenuMaximize(Sender: TFtMenuItem);
     procedure HandleTaskMenuClose(Sender: TFtMenuItem);
   public
-    constructor Create(ALauncher: TShellLauncher = nil);
+    // AWidth/AHeight of 0 mean "the taskbar's own geometry". A dock passes its own,
+    // because the toolkit fixes a window's size at creation and offers no resize.
+    constructor Create(ALauncher: TShellLauncher = nil;
+                       APanelWidth: Integer = 0; APanelHeight: Integer = 0);
     destructor Destroy(); override;
 
     procedure Show();
@@ -130,10 +150,12 @@ type
     procedure CloseWindow(AWin: Cardinal);
     procedure OnTaskClicked(AWin: Cardinal);
 
-    function PanelX(): Integer;
-    function PanelY(): Integer;
-    function PanelWidth(): Integer;
-    function PanelHeight(): Integer;
+    // Virtual: the base class calls these when it sets the window up, so a
+    // subclass with different geometry (a dock) must be able to answer for itself.
+    function PanelX(): Integer; virtual;
+    function PanelY(): Integer; virtual;
+    function PanelWidth(): Integer; virtual;
+    function PanelHeight(): Integer; virtual;
     function GetTaskCount(): Integer;
     function GetIconCacheCount(): Integer;
     function GetTaskIcon(AIndex: Integer): TFtBitmap;
@@ -146,6 +168,12 @@ type
     property TaskCount     : Integer         read GetTaskCount;
     property IconCacheCount: Integer         read GetIconCacheCount;
     property WindowWidget  : TFtWindow       read FWindow;
+  end;
+
+  TShellBottomPanel = class(TShellTaskSurface)
+  public
+    constructor Create(ALauncher: TShellLauncher = nil;
+                       APanelWidth: Integer = 0; APanelHeight: Integer = 0);
   end;
 
 var
@@ -186,14 +214,31 @@ begin
     TShellBottomPanel(user_data).Tick();
 end;
 
+// True when a bitmap has no drawn pixels. Used to reject icons that applications
+// publish but leave empty.
+function IsBlankBitmap(ABmp: TFtBitmap): Boolean;
+var
+  p: PByte;
+  i, n: Integer;
+begin
+  Result := True;
+  if ABmp = nil then Exit;
+  p := PByte(ABmp.Pixels);
+  if p = nil then Exit;
+  n := ABmp.Width * ABmp.Height * 4;
+  for i := 0 to n - 1 do
+    if p[i] <> 0 then
+      Exit(False);
+end;
+
 // -----------------------------------------------------------------------------
-// TShellBottomPanel Implementation
+// TShellTaskSurface Implementation
 // -----------------------------------------------------------------------------
 
-constructor TShellBottomPanel.Create(ALauncher: TShellLauncher);
+constructor TShellTaskSurface.Create(ALauncher: TShellLauncher;
+  APanelWidth: Integer; APanelHeight: Integer);
 begin
   inherited Create();
-  GBottomPanelInstance := Self;
   FLauncher := ALauncher;
   FIsVisible := False;
   FPanelHeight := 38;
@@ -201,7 +246,12 @@ begin
   FLastTaskSignature := '';
   FActiveWindow := 0;
 
-  if FtIsLibLoaded() and Assigned(ft_screen_get_width) then
+  if APanelHeight > 0 then
+    FPanelHeight := APanelHeight;
+
+  if APanelWidth > 0 then
+    FPanelWidth := APanelWidth
+  else if FtIsLibLoaded() and Assigned(ft_screen_get_width) then
     FPanelWidth := FtApp().ScreenWidth
   else
     FPanelWidth := 1920;
@@ -229,7 +279,7 @@ begin
   end;
 end;
 
-destructor TShellBottomPanel.Destroy();
+destructor TShellTaskSurface.Destroy();
 var
   i: Integer;
 begin
@@ -280,7 +330,7 @@ begin
   inherited Destroy();
 end;
 
-procedure TShellBottomPanel.HandleTaskButtonClick(Sender: TFtButton);
+procedure TShellTaskSurface.HandleTaskButtonClick(Sender: TFtButton);
 begin
   if Assigned(Sender) and (Sender.Tag <> 0) then
     OnTaskClicked(Cardinal(Sender.Tag));
@@ -293,7 +343,7 @@ end;
 // left button, so a shared menu would have no way to learn which task was
 // right-clicked. The cost is one native popup window per task, created lazily
 // here and freed with the task.
-procedure TShellBottomPanel.BuildTaskMenu(var ATask: TTaskItem);
+procedure TShellTaskSurface.BuildTaskMenu(var ATask: TTaskItem);
 var
   it: TFtMenuItem;
 begin
@@ -321,7 +371,7 @@ begin
   UpdateTaskMenuState(ATask);
 end;
 
-procedure TShellBottomPanel.UpdateTaskMenuState(var ATask: TTaskItem);
+procedure TShellTaskSurface.UpdateTaskMenuState(var ATask: TTaskItem);
 begin
   if not Assigned(ATask.Menu) then Exit;
 
@@ -348,7 +398,7 @@ begin
   end;
 end;
 
-procedure TShellBottomPanel.HandleTaskMenuMinimize(Sender: TFtMenuItem);
+procedure TShellTaskSurface.HandleTaskMenuMinimize(Sender: TFtMenuItem);
 var
   win: Cardinal;
 begin
@@ -365,7 +415,7 @@ begin
     MinimizeWindow(win);
 end;
 
-procedure TShellBottomPanel.HandleTaskMenuMaximize(Sender: TFtMenuItem);
+procedure TShellTaskSurface.HandleTaskMenuMaximize(Sender: TFtMenuItem);
 var
   win: Cardinal;
 begin
@@ -379,13 +429,13 @@ begin
     MaximizeWindow(win);
 end;
 
-procedure TShellBottomPanel.HandleTaskMenuClose(Sender: TFtMenuItem);
+procedure TShellTaskSurface.HandleTaskMenuClose(Sender: TFtMenuItem);
 begin
   if Assigned(Sender) then
     CloseWindow(Cardinal(Sender.Tag));
 end;
 
-procedure TShellBottomPanel.InitAtoms();
+procedure TShellTaskSurface.InitAtoms();
 begin
   if FConn = nil then Exit;
 
@@ -413,20 +463,73 @@ begin
   FAtomWMClass               := InternAtom(FConn, 'WM_CLASS');
 end;
 
-procedure TShellBottomPanel.SetupWindow();
+function TShellTaskSurface.WindowTitle(): string;
+begin
+  Result := 'shellsama-bottom-panel';
+end;
+
+procedure TShellTaskSurface.RebuildWindow();
 var
-  py: Integer;
+  i: Integer;
+  wasVisible: Boolean;
 begin
   if not FtIsLibLoaded() then Exit;
 
+  wasVisible := FIsVisible;
+
+  // Buttons and their context menus are both children of the window being freed, so
+  // both are released first. The menus matter as much as the buttons: BuildTaskMenu
+  // returns early when a task already owns a menu, so a surviving menu would keep
+  // pointing into freed memory and crash the next time its caption was set.
+  for i := 0 to High(FTasks) do
+  begin
+    if Assigned(FTasks[i].Button) then
+    begin
+      if Assigned(FTasks[i].Menu) then
+        FTasks[i].Button.ContextMenuHandle := nil;
+      FTasks[i].Button.Free();
+      FTasks[i].Button := nil;
+    end;
+    if Assigned(FTasks[i].Menu) then
+    begin
+      FTasks[i].Menu.Free();
+      FTasks[i].Menu := nil;
+      FTasks[i].MenuMinimize := nil;
+      FTasks[i].MenuMaximize := nil;
+      FTasks[i].MenuClose := nil;
+    end;
+  end;
+
+  if Assigned(FWindow) then
+  begin
+    FWindow.Free();
+    FWindow := nil;
+  end;
+
+  SetupWindow();
+
+  if wasVisible and Assigned(FWindow) then
+  begin
+    FWindow.Show();
+    FIsVisible := True;
+  end;
+end;
+
+procedure TShellTaskSurface.SetupWindow();
+var
+  px, py: Integer;
+begin
+  if not FtIsLibLoaded() then Exit;
+
+  px := PanelX();
   py := PanelY();
-  FWindow := TFtWindow.Create(FPanelWidth, FPanelHeight, 'shellsama-bottom-panel');
+  FWindow := TFtWindow.Create(PanelWidth(), PanelHeight(), WindowTitle());
   if FWindow = nil then Exit;
 
   FWindow.WindowType := ftwtDock;
   FWindow.Borderless := True;
   FWindow.SkipTaskbar := True;
-  FWindow.SetPosition(0, py);
+  FWindow.SetPosition(px, py);
   FWindow.BackgroundOpacity := 0.90;
 
   // Reserve bottom screen space via _NET_WM_STRUT & _NET_WM_STRUT_PARTIAL
@@ -439,12 +542,12 @@ begin
   RefreshTasks();
 end;
 
-function TShellBottomPanel.PanelX(): Integer;
+function TShellTaskSurface.PanelX(): Integer;
 begin
   Result := 0;
 end;
 
-function TShellBottomPanel.PanelY(): Integer;
+function TShellTaskSurface.PanelY(): Integer;
 var
   sh: Integer;
 begin
@@ -455,34 +558,34 @@ begin
   Result := sh - FPanelHeight;
 end;
 
-function TShellBottomPanel.PanelWidth(): Integer;
+function TShellTaskSurface.PanelWidth(): Integer;
 begin
   Result := FPanelWidth;
 end;
 
-function TShellBottomPanel.PanelHeight(): Integer;
+function TShellTaskSurface.PanelHeight(): Integer;
 begin
   Result := FPanelHeight;
 end;
 
-function TShellBottomPanel.GetTaskCount(): Integer;
+function TShellTaskSurface.GetTaskCount(): Integer;
 begin
   Result := Length(FTasks);
 end;
 
-function TShellBottomPanel.GetIconCacheCount(): Integer;
+function TShellTaskSurface.GetIconCacheCount(): Integer;
 begin
   Result := Length(FWindowIconCache);
 end;
 
-function TShellBottomPanel.GetTaskIcon(AIndex: Integer): TFtBitmap;
+function TShellTaskSurface.GetTaskIcon(AIndex: Integer): TFtBitmap;
 begin
   Result := nil;
   if (AIndex >= 0) and (AIndex < Length(FTasks)) then
     Result := GetOrLoadWindowIcon(FTasks[AIndex].Window, 18);
 end;
 
-function TShellBottomPanel.GetBackgroundOpacity(): Double;
+function TShellTaskSurface.GetBackgroundOpacity(): Double;
 begin
   if Assigned(FWindow) then
     Result := FWindow.BackgroundOpacity
@@ -490,13 +593,13 @@ begin
     Result := 0.90;
 end;
 
-procedure TShellBottomPanel.SetBackgroundOpacity(AValue: Double);
+procedure TShellTaskSurface.SetBackgroundOpacity(AValue: Double);
 begin
   if Assigned(FWindow) then
     FWindow.BackgroundOpacity := AValue;
 end;
 
-procedure TShellBottomPanel.Show();
+procedure TShellTaskSurface.Show();
 begin
   if FWindow = nil then Exit;
   FWindow.Show();
@@ -504,14 +607,14 @@ begin
   RefreshTasks();
 end;
 
-procedure TShellBottomPanel.Hide();
+procedure TShellTaskSurface.Hide();
 begin
   if FWindow = nil then Exit;
   FWindow.Hide();
   FIsVisible := False;
 end;
 
-function TShellBottomPanel.QueryClientList(): TWindowIdArray;
+function TShellTaskSurface.QueryClientList(): TWindowIdArray;
 var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
@@ -539,7 +642,7 @@ begin
   end;
 end;
 
-function TShellBottomPanel.QueryActiveWindow(): Cardinal;
+function TShellTaskSurface.QueryActiveWindow(): Cardinal;
 var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
@@ -559,7 +662,7 @@ begin
   end;
 end;
 
-function TShellBottomPanel.QueryWindowTitle(AWin: Cardinal): string;
+function TShellTaskSurface.QueryWindowTitle(AWin: Cardinal): string;
 var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
@@ -611,7 +714,7 @@ begin
   end;
 end;
 
-function TShellBottomPanel.QueryWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
+function TShellTaskSurface.QueryWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
 var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
@@ -773,12 +876,22 @@ begin
     end;
   end;
 
+  // A bitmap that is entirely zero is an icon the application published but did not
+  // draw. xterm does this: it advertises _NET_WM_ICON and leaves it blank, so the
+  // lookup "succeeds" and the fallback below never runs. The result is a task with
+  // no visible icon at all. Treat blank as missing.
+  if (Result <> nil) and IsBlankBitmap(Result) then
+  begin
+    Result.Free();
+    Result := nil;
+  end;
+
   // 3. Fallback generic window icon
   if Result = nil then
     Result := CreateFallbackIcon(APreferredSize, APreferredSize);
 end;
 
-function TShellBottomPanel.GetOrLoadWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
+function TShellTaskSurface.GetOrLoadWindowIcon(AWin: Cardinal; APreferredSize: Integer = 18): TFtBitmap;
 var
   i: Integer;
 begin
@@ -800,7 +913,7 @@ begin
   FWindowIconCache[High(FWindowIconCache)].Bitmap := Result;
 end;
 
-function TShellBottomPanel.ShouldShowTask(AWin: Cardinal): Boolean;
+function TShellTaskSurface.ShouldShowTask(AWin: Cardinal): Boolean;
 var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
@@ -875,7 +988,7 @@ begin
   Result := True;
 end;
 
-function TShellBottomPanel.IsWindowMinimized(AWin: Cardinal): Boolean;
+function TShellTaskSurface.IsWindowMinimized(AWin: Cardinal): Boolean;
 var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
@@ -905,7 +1018,7 @@ begin
   end;
 end;
 
-function TShellBottomPanel.IsWindowMaximized(AWin: Cardinal): Boolean;
+function TShellTaskSurface.IsWindowMaximized(AWin: Cardinal): Boolean;
 var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
@@ -938,7 +1051,7 @@ begin
   end;
 end;
 
-procedure TShellBottomPanel.RefreshTasks();
+procedure TShellTaskSurface.RefreshTasks();
 var
   rawWins: array of Cardinal;
   validWins: array of Cardinal;
@@ -1063,7 +1176,7 @@ begin
   LayoutButtons();
 end;
 
-procedure TShellBottomPanel.LayoutButtons();
+procedure TShellTaskSurface.LayoutButtons();
 var
   startX, endX, availW, numTasks: Integer;
   btnW, btnX, i: Integer;
@@ -1138,7 +1251,7 @@ begin
     FWindow.Invalidate();
 end;
 
-procedure TShellBottomPanel.Tick();
+procedure TShellTaskSurface.Tick();
 var
   curActive: Cardinal;
   sig: AnsiString;
@@ -1165,7 +1278,7 @@ end;
 //
 // Built from the window ids only: titles and states change far more often than
 // the set itself, and those are handled by RefreshTasks' own state refresh.
-function TShellBottomPanel.TaskSetSignature(): AnsiString;
+function TShellTaskSurface.TaskSetSignature(): AnsiString;
 var
   wins: array of Cardinal;
   i: Integer;
@@ -1180,7 +1293,7 @@ begin
 end;
 
 
-procedure TShellBottomPanel.OnTaskClicked(AWin: Cardinal);
+procedure TShellTaskSurface.OnTaskClicked(AWin: Cardinal);
 begin
   if AWin = 0 then Exit;
 
@@ -1197,7 +1310,7 @@ begin
   RefreshTasks();
 end;
 
-procedure TShellBottomPanel.ActivateWindow(AWin: Cardinal);
+procedure TShellTaskSurface.ActivateWindow(AWin: Cardinal);
 var
   ev: xcb_client_message_event_t;
   data32: PCardinalArray;
@@ -1219,7 +1332,7 @@ begin
   xcb_flush(FConn);
 end;
 
-procedure TShellBottomPanel.MinimizeWindow(AWin: Cardinal);
+procedure TShellTaskSurface.MinimizeWindow(AWin: Cardinal);
 var
   ev: xcb_client_message_event_t;
   data32: PCardinalArray;
@@ -1262,7 +1375,7 @@ begin
   xcb_flush(FConn);
 end;
 
-procedure TShellBottomPanel.UnminimizeWindow(AWin: Cardinal);
+procedure TShellTaskSurface.UnminimizeWindow(AWin: Cardinal);
 var
   ev: xcb_client_message_event_t;
   data32: PCardinalArray;
@@ -1288,7 +1401,7 @@ begin
   xcb_flush(FConn);
 end;
 
-procedure TShellBottomPanel.MaximizeWindow(AWin: Cardinal);
+procedure TShellTaskSurface.MaximizeWindow(AWin: Cardinal);
 var
   ev: xcb_client_message_event_t;
   data32: PCardinalArray;
@@ -1313,7 +1426,7 @@ begin
   xcb_flush(FConn);
 end;
 
-procedure TShellBottomPanel.RestoreWindow(AWin: Cardinal);
+procedure TShellTaskSurface.RestoreWindow(AWin: Cardinal);
 var
   ev: xcb_client_message_event_t;
   data32: PCardinalArray;
@@ -1336,7 +1449,7 @@ begin
   xcb_flush(FConn);
 end;
 
-procedure TShellBottomPanel.CloseWindow(AWin: Cardinal);
+procedure TShellTaskSurface.CloseWindow(AWin: Cardinal);
 var
   ev: xcb_client_message_event_t;
   data32: PCardinalArray;
@@ -1360,5 +1473,15 @@ begin
   xcb_flush(FConn);
 end;
 
+// -----------------------------------------------------------------------------
+// TShellBottomPanel Implementation
+// -----------------------------------------------------------------------------
+
+constructor TShellBottomPanel.Create(ALauncher: TShellLauncher;
+  APanelWidth: Integer; APanelHeight: Integer);
+begin
+  inherited Create(ALauncher, APanelWidth, APanelHeight);
+  GBottomPanelInstance := Self;
+end;
 
 end.
