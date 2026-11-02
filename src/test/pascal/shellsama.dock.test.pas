@@ -71,15 +71,16 @@ begin
   sw := FtApp().ScreenWidth;
   sh := FtApp().ScreenHeight;
 
-  // 68 tall, sitting 8px above the bottom edge, horizontally centred. The taskbar it
+  // 66 tall, sitting 8px above the bottom edge, horizontally centred. The taskbar it
   // replaces is a 38px full-width strip flush with the bottom, so these are the
   // numbers that distinguish the two modes.
   //
-  // The 68 is 8 top padding + 48 icon + 4 gap + 6 dot + 2 bottom padding. The bottom
-  // padding is deliberately small: the dot sits directly under the icon, so anything
-  // more is dead space inside the plate.
-  AssertEquals('Dock height', 68, FDock.PanelHeight());
-  AssertEquals('Dock bottom margin', sh - 68 - 8, FDock.PanelY());
+  // 8 top padding + 48 icon + 2 gap + 6 dot + 2 bottom padding, plus the one row the
+  // rounded background spends on its bottom antialiased edge. Both gaps are
+  // deliberately tight: the dot belongs to the icon, so a wide margin reads as dead
+  // space inside the plate.
+  AssertEquals('Dock height', 66, FDock.PanelHeight());
+  AssertEquals('Dock bottom margin', sh - 66 - 8, FDock.PanelY());
   AssertEquals('Dock is centred', (sw - FDock.PanelWidth()) div 2, FDock.PanelX());
   AssertEquals('Dock X is not the taskbar X', False, FDock.PanelX() = 0);
 end;
@@ -150,13 +151,13 @@ begin
   FDock.WindowWidget.Title := marker;
 
   // A width change of the kind a task appearing causes.
-  FDock.ResizeWindow(beforeW + 54, 68, 100);
+  FDock.ResizeWindow(beforeW + 54, 66, 100);
 
   AssertNotNull('Dock window still exists', FDock.WindowWidget);
   AssertEquals('the same window survived the resize: title kept',
                marker, FDock.WindowWidget.Title);
   AssertEquals('panel width followed the resize', beforeW + 54, FDock.PanelWidth());
-  AssertEquals('panel height unchanged', 68, FDock.PanelHeight());
+  AssertEquals('panel height unchanged', 66, FDock.PanelHeight());
 
   // Put the title back so the rest of the suite sees a normal dock.
   FDock.WindowWidget.Title := 'shellsama-dock';

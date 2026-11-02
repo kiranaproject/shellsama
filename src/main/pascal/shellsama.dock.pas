@@ -108,10 +108,37 @@ const
   DOCK_PADDING       = 10;
   DOCK_GAP           = 6;
   DOCK_MAX_WIDTH     = 720;
-  // 8 top + 48 icon + 4 gap + 6 dot + 2 bottom padding = 68.
-  DOCK_HEIGHT        = 68;
+  // 8 top + 48 icon + 2 gap + 6 dot + 2 bottom padding.
+  //
+  // Derived from the measured rows rather than trusted: inside the plate the icon box
+  // ends at row 55 (8 + 48 - 1), so the dot must start at 58 and end at 63, and the
+  // plate must end at 65. 66 rows total.
+  DOCK_HEIGHT        = 66;
   DOCK_BOTTOM_MARGIN = 8;
   DOT_SIZE           = 6;
+
+// Only declarations the window paint path honours: a background colour and a border
+// radius. The radius leaves the corners unpainted, so they show the desktop through
+// them. Needs a compositor; without one the corners render black.
+DOCK_PLATE_CSS =
+  'background-color: rgba(24, 24, 32, 0.82);' +
+  'border-radius: 18px;';
+
+// A dock icon has almost no chrome until you point at it. The toolkit's default hover
+// is a blue halo plus a fully opaque plate, far too loud against a dark dock; this
+// replaces it with a faint white wash. Appended rather than loaded, so the theme's own
+// rules stay in place.
+//
+// Colour and alpha only. A border-radius here would drop the hover onto the toolkit's
+// halo path, which is the thing being replaced.
+// border-width: 0 matters. Without it the paint path falls back to an implicit 1px
+// outline (bg colour x 0.8) on hover, which reads as a bright ring around the icon.
+DOCK_ICON_CSS =
+  'button.dockicon { background-color: rgba(255, 255, 255, 0.00); border-width: 0; } ' +
+  'button.dockicon:hover { background-color: rgba(255, 255, 255, 0.10); border-width: 0; } ' +
+  'button.dockicon:active { background-color: rgba(255, 255, 255, 0.16); border-width: 0; }';
+
+DOCK_ICON_STYLE_CLASS = 'dockicon';
 
 constructor TShellDock.Create(ALauncher: TShellLauncher);
 var
@@ -155,18 +182,15 @@ begin
 end;
 
 procedure TShellDock.SetupWindow();
-const
-  // Only declarations the window paint path honours: a background colour and a border
-  // radius. The radius leaves the corners unpainted, so they show the desktop through
-  // them. Needs a compositor; without one the corners render black.
-  DOCK_PLATE_CSS =
-    'background-color: rgba(24, 24, 32, 0.82);' +
-    'border-radius: 18px;';
 begin
   inherited SetupWindow();
   if FWindow = nil then Exit;
   FWindow.Style := DOCK_PLATE_CSS;
   FWindow.BackgroundOpacity := 0.82;
+
+  if Assigned(ft_style_append_css_string) then
+    ft_style_append_css_string(PChar(DOCK_ICON_CSS));
+
   FWindow.Invalidate();
 end;
 
@@ -398,7 +422,7 @@ begin
   // AX/AY are the button's position in WINDOW coordinates, not offsets inside it, so
   // the dot is placed relative to the button's own rectangle.
   cxp := AX + (AW / 2);
-  cyp := AY + AH + 7;
+  cyp := AY + AH + 3;
   radius := DOT_SIZE / 2;
 
   cv := TFtCanvas.Create(ACanvas);
@@ -452,7 +476,9 @@ begin
                                              FEntries[i].Title);
       FEntries[i].Button.IsToggle := True;
       FEntries[i].Button.Flat := True;
-      FEntries[i].Button.CornerRadius := 10.0;
+      FEntries[i].Button.StyleClass := DOCK_ICON_STYLE_CLASS;
+      // A tooltip per icon is redundant: the icon is the label.
+      FEntries[i].Button.ShowHint := False;
       FEntries[i].Button.IconPosition := ftipOnly;
       FEntries[i].Button.OnClick := @HandleEntryClick;
     end
@@ -494,8 +520,9 @@ begin
     else
       FEntries[i].Button.ClearIcon();
 
-    // The active app gets the toggled plate; the dot below carries running/focused.
-    FEntries[i].Button.Toggled := FEntries[i].IsActive;
+    // No toggled plate: the dot underneath says whether the app is running and which
+    // app has focus, so a filled button on top of that is redundant and heavy.
+    FEntries[i].Button.Toggled := False;
 
     // The running indicator is drawn by the button's own paint overlay, not by a
     // child widget: a child at the bottom of the stack is covered by its siblings, and
