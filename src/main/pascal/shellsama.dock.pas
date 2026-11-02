@@ -108,7 +108,8 @@ const
   DOCK_PADDING       = 10;
   DOCK_GAP           = 6;
   DOCK_MAX_WIDTH     = 720;
-  DOCK_HEIGHT        = 78;
+  // 8 top + 48 icon + 4 gap + 6 dot + 2 bottom padding = 68.
+  DOCK_HEIGHT        = 68;
   DOCK_BOTTOM_MARGIN = 8;
   DOT_SIZE           = 6;
 
@@ -397,7 +398,7 @@ begin
   // AX/AY are the button's position in WINDOW coordinates, not offsets inside it, so
   // the dot is placed relative to the button's own rectangle.
   cxp := AX + (AW / 2);
-  cyp := AY + AH + 4;
+  cyp := AY + AH + 7;
   radius := DOT_SIZE / 2;
 
   cv := TFtCanvas.Create(ACanvas);
