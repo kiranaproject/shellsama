@@ -613,7 +613,7 @@ end;
 
 procedure TShellDock.ShowWindowList(const AAppKey: string);
 var
-  idx, i: Integer;
+  idx, i, listH: Integer;
   item: TFtMenuItem;
   title: string;
 begin
@@ -640,8 +640,20 @@ begin
       item.Tag := Int64(FEntries[idx].Windows[i]);
   end;
 
-  // Anchor the list above the icon that opened it.
-  FWindowList.Show(FWindow.X + (PanelWidth() div 2), PanelY() - 8);
+  // Anchor the list above the icon that opened it. Show() takes coordinates LOCAL to
+  // the dock window and converts them to screen itself, so the icon's button bounds are
+  // already the right coordinate space. Passing screen coordinates here put the list
+  // off at the bottom-right of the screen, because the dock's own position was then
+  // added a second time.
+  // Sit the list ABOVE the icon, not on top of it. The toolkit's item height is 28px
+  // and it lays out one row per entry, so the list's own height follows from the
+  // window count and can be subtracted here.
+  listH := FWindowList.ItemCount * 28;
+  if Assigned(FEntries[idx].Button) then
+    FWindowList.Show(FEntries[idx].Button.X,
+                     FEntries[idx].Button.Y - listH - 4)
+  else
+    FWindowList.Show(PanelWidth() div 2, 0);
 end;
 
 procedure TShellDock.HandleWindowListItem(Sender: TFtMenuItem);
