@@ -106,6 +106,9 @@ type
     function QueryClientList(): TWindowIdArray;
     function QueryActiveWindow(): Cardinal;
     function QueryWindowTitle(AWin: Cardinal): string;
+    // WM_CLASS for a window, as (instance, class). Empty strings when absent. Used to
+    // decide which application a window belongs to.
+    procedure QueryWindowClass(AWin: Cardinal; out AResName, AResClass: string);
     function ShouldShowTask(AWin: Cardinal): Boolean;
     function IsWindowMinimized(AWin: Cardinal): Boolean;
     function IsWindowMaximized(AWin: Cardinal): Boolean;
@@ -158,6 +161,8 @@ type
     function PanelWidth(): Integer; virtual;
     function PanelHeight(): Integer; virtual;
     function GetTaskCount(): Integer;
+    // Window id at a task slot. The dock groups these by application.
+    function GetTaskWindow(AIndex: Integer): Cardinal;
     function GetIconCacheCount(): Integer;
     function GetTaskIcon(AIndex: Integer): TFtBitmap;
     function GetBackgroundOpacity(): Double;
@@ -554,6 +559,13 @@ begin
   Result := FPanelHeight;
 end;
 
+function TShellTaskSurface.GetTaskWindow(AIndex: Integer): Cardinal;
+begin
+  Result := 0;
+  if (AIndex >= 0) and (AIndex < Length(FTasks)) then
+    Result := FTasks[AIndex].Window;
+end;
+
 function TShellTaskSurface.GetTaskCount(): Integer;
 begin
   Result := Length(FTasks);
@@ -643,6 +655,35 @@ begin
   try
     if xcb_get_property_value_length(reply) >= SizeOf(xcb_window_t) then
       Result := Pxcb_window_t(xcb_get_property_value(reply))^;
+  finally
+    c_free(reply);
+  end;
+end;
+
+procedure TShellTaskSurface.QueryWindowClass(AWin: Cardinal; out AResName, AResClass: string);
+var
+  cookie: xcb_get_property_cookie_t;
+  reply: Pxcb_get_property_reply_t;
+  len: Integer;
+  pStr, pNext: PChar;
+begin
+  AResName := '';
+  AResClass := '';
+  if (FConn = nil) or (AWin = 0) or (FAtomWMClass = 0) then Exit;
+
+  cookie := xcb_get_property(FConn, 0, AWin, FAtomWMClass, XCB_ATOM_STRING, 0, 128);
+  reply := xcb_get_property_reply(FConn, cookie, nil);
+  if reply = nil then Exit;
+
+  try
+    len := xcb_get_property_value_length(reply);
+    if len <= 0 then Exit;
+    pStr := PChar(xcb_get_property_value(reply));
+    // WM_CLASS is two NUL-terminated strings: instance, then class.
+    AResName := StrPas(pStr);
+    pNext := pStr + Length(AResName) + 1;
+    if (pNext - pStr) < len then
+      AResClass := StrPas(pNext);
   finally
     c_free(reply);
   end;

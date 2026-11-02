@@ -1,14 +1,22 @@
-{ Unit ShellSama.Dock — macOS-style dock for Samarinda DE }
+{ Unit ShellSama.Dock — macOS-style application dock for Samarinda DE }
 
 unit ShellSama.Dock;
 
-// The dock is the bottom panel with a different presentation: one large icon per
-// task, centred, no captions, on a floating rounded plate. Everything else -- the
-// client list, icons, EWMH state, window actions, context menus -- is the taskbar's
-// and is inherited, so the two cannot drift apart.
+// One icon per application rather than one per window.
 //
-// It deliberately does not use the full screen width. A dock that spans the screen
-// is a taskbar; the point of this mode is the inset plate.
+// Each icon has three visual states, which is what makes a text-free dock readable at
+// a glance:
+//
+//   pinned, not running   plain icon, no marker
+//   running, not focused  icon + dim dot underneath
+//   running and focused   icon + bright dot underneath
+//
+// Clicking an app with no window launches it; with one window it activates it; with
+// several it opens a list of that app's windows. Right-clicking offers pin/unpin.
+//
+// The dot is its own widget rather than part of the button: the toolkit exposes no
+// per-button paint callback through ftpas, and drawing under the button would be
+// painted over by it.
 
 {$mode objfpc}{$H+}
 {$modeswitch advancedrecords}
@@ -18,21 +26,51 @@ interface
 uses
   Classes, SysUtils, Math,
   Floria.XCB,
-  ftpas.api, ftpas.types, ftpas,
+  ctypes, ftpas.api, ftpas.types, ftpas, ftpas.creative,
   ShellSama.DesktopApps,
   ShellSama.Launcher,
-  ShellSama.BottomPanel;
+  ShellSama.BottomPanel,
+  ShellSama.DockApps;
 
 type
+  TDockEntry = record
+    AppKey   : string;
+    Title    : string;
+    Pinned   : Boolean;
+    Windows  : array of Cardinal;  // this app's windows
+    IsActive : Boolean;            // one of its windows is focused
+    Button   : TFtButton;
+    Menu     : TFtPopupMenu;
+    MenuPin  : TFtMenuItem;
+  end;
+
   TShellDock = class(TShellBottomPanel)
   private
-    FIconSize    : Integer;
-    FMaxDockWidth: Integer;
+    FIconSize     : Integer;
+    FMaxDockWidth : Integer;
+    FDockApps     : TShellDockApps;
+    FEntries      : array of TDockEntry;
+    FWindowList   : TFtPopupMenu;
+    FWindowListKey: string;
+    FIconKeys     : TStringList;
+    FIconBitmaps  : TList;
+
+    procedure BuildEntries();
+    procedure FreeEntries();
+    function DotWidth(): Double;
+    function IndexOfKey(const AAppKey: string): Integer;
+    procedure HandleEntryClick(Sender: TFtButton);
+    procedure HandleEntryMenuPin(Sender: TFtMenuItem);
+    procedure HandleWindowListItem(Sender: TFtMenuItem);
+    procedure ShowWindowList(const AAppKey: string);
+    procedure ActivateOrLaunch(const AAppKey: string);
+    // Icon for an application: the desktop entry's icon, else the first window's.
+    // Cached per app key because the dock draws one icon per app, not per window.
+    function IconForApp(const AAppKey: string; APreferredSize: Integer): TFtBitmap;
   protected
     function WindowTitle(): string; override;
     procedure SetupWindow(); override;
     procedure LayoutButtons(); override;
-    // Width the plate needs for its current contents.
     function DesiredWidth(): Integer;
     function ScreenWidthHint(): Integer;
   public
@@ -44,37 +82,70 @@ type
     function PanelHeight(): Integer; override;
     function PanelY(): Integer; override;
 
-    // Icon edge length, and the plate's width cap, both exposed for tests.
-    property IconSize    : Integer read FIconSize;
-    property MaxDockWidth: Integer read FMaxDockWidth;
+    procedure RefreshDock();
+
+    function EntryCount(): Integer;
+    function EntryAppKey(AIndex: Integer): string;
+    function EntryRunning(AIndex: Integer): Boolean;
+    function EntryFocused(AIndex: Integer): Boolean;
+    function EntryPinned(AIndex: Integer): Boolean;
+    function EntryWindowCountAt(AIndex: Integer): Integer;
+
+    property IconSize     : Integer        read FIconSize;
+    property MaxDockWidth : Integer        read FMaxDockWidth;
+    property DockApps     : TShellDockApps read FDockApps;
   end;
 
 implementation
 
+// The paint callback type is a plain procedure pointer, so the painter is a unit-level
+// routine and reaches the live dock through this variable. Only one dock exists.
 var
-  GShellDockInstance: TShellDock = nil;
+  GActiveDock: TShellDock = nil;
 
 const
-  DOCK_ICON_SIZE      = 48;
-  DOCK_PADDING        = 10;
-  DOCK_GAP            = 6;
-  DOCK_MAX_WIDTH      = 720;
-  DOCK_HEIGHT         = 78;
-  DOCK_BOTTOM_MARGIN  = 8;
+  DOCK_ICON_SIZE     = 48;
+  DOCK_PADDING       = 10;
+  DOCK_GAP           = 6;
+  DOCK_MAX_WIDTH     = 720;
+  DOCK_HEIGHT        = 78;
+  DOCK_BOTTOM_MARGIN = 8;
+  DOT_SIZE           = 6;
 
 constructor TShellDock.Create(ALauncher: TShellLauncher);
+var
+  apps: TDesktopAppList;
 begin
-  // Set before the inherited constructor, not after. That constructor creates the
-  // window and lays the buttons out, which calls DesiredWidth(); with FIconSize
-  // still zero it computed a zero width, decided the plate had to be rebuilt, and
-  // rebuilt the window from inside its own creation.
+  // Set before the inherited constructor, which creates the window and lays out.
   FIconSize := DOCK_ICON_SIZE;
   FMaxDockWidth := DOCK_MAX_WIDTH;
 
-  // The width for zero tasks is the empty plate. The toolkit fixes a window's size
-  // at creation, so the geometry has to be decided here.
+  apps := nil;
+  if Assigned(ALauncher) then
+    apps := ALauncher.AppList;
+  FDockApps := TShellDockApps.Create(apps);
+
+  GActiveDock := Self;
+  FIconKeys := TStringList.Create();
+  FIconKeys.CaseSensitive := False;
+  FIconBitmaps := TList.Create();
+
   inherited Create(ALauncher, DOCK_ICON_SIZE + (2 * DOCK_PADDING), DOCK_HEIGHT);
-  GShellDockInstance := Self;
+end;
+
+destructor TShellDock.Destroy();
+var
+  i: Integer;
+begin
+  if GActiveDock = Self then
+    GActiveDock := nil;
+  FreeEntries();
+  for i := 0 to FIconBitmaps.Count - 1 do
+    TFtBitmap(FIconBitmaps[i]).Free();
+  FIconBitmaps.Free();
+  FIconKeys.Free();
+  FDockApps.Free();
+  inherited Destroy();
 end;
 
 function TShellDock.WindowTitle(): string;
@@ -84,20 +155,15 @@ end;
 
 procedure TShellDock.SetupWindow();
 const
-  // Only declarations the window paint path honours: a background colour and a
-  // border radius. The radius leaves the corners unpainted, so they show the
-  // desktop through them -- that is the whole of the rounded look, and it needs a
-  // compositor. No border: window borders are not drawn by the toolkit.
+  // Only declarations the window paint path honours: a background colour and a border
+  // radius. The radius leaves the corners unpainted, so they show the desktop through
+  // them. Needs a compositor; without one the corners render black.
   DOCK_PLATE_CSS =
     'background-color: rgba(24, 24, 32, 0.82);' +
     'border-radius: 18px;';
 begin
   inherited SetupWindow();
   if FWindow = nil then Exit;
-
-  // A dock plate is dark and translucent, unlike the taskbar strip, so dark app
-  // icons stay readable. Set here rather than in the constructor because the window
-  // is recreated when the plate resizes.
   FWindow.Style := DOCK_PLATE_CSS;
   FWindow.BackgroundOpacity := 0.82;
   FWindow.Invalidate();
@@ -111,142 +177,474 @@ begin
     Result := 1920;
 end;
 
-function TShellDock.DesiredWidth(): Integer;
-var
-  n, wanted: Integer;
-begin
-  n := TaskCount;
-  if n < 1 then
-    Exit(FIconSize + (2 * DOCK_PADDING));
-
-  wanted := (2 * DOCK_PADDING) + (n * FIconSize) + ((n - 1) * DOCK_GAP);
-  Result := Min(wanted, FMaxDockWidth);
-end;
-
-destructor TShellDock.Destroy();
-begin
-  if GShellDockInstance = Self then
-    GShellDockInstance := nil;
-  inherited Destroy();
-end;
-
 function TShellDock.PanelHeight(): Integer;
 begin
   Result := DOCK_HEIGHT;
 end;
 
+function TShellDock.DesiredWidth(): Integer;
+var
+  n: Integer;
+begin
+  n := EntryCount();
+  if n < 1 then
+    Exit(FIconSize + (2 * DOCK_PADDING));
+  Result := Min((2 * DOCK_PADDING) + (n * FIconSize) + ((n - 1) * DOCK_GAP),
+                FMaxDockWidth);
+end;
+
 function TShellDock.PanelWidth(): Integer;
 begin
-  // The plate follows its contents, so the width is whatever the window was last
-  // built at. LayoutButtons rebuilds the window when that number changes.
   Result := FPanelWidth;
 end;
 
 function TShellDock.PanelX(): Integer;
 begin
-  // Centred. The plate is symmetric, so the strut-adjusted work area is not needed.
   Result := (ScreenWidthHint() - PanelWidth()) div 2;
 end;
 
 function TShellDock.PanelY(): Integer;
-var
-  sh: Integer;
 begin
   if FtIsLibLoaded() and Assigned(ft_screen_get_height) then
-    sh := FtApp().ScreenHeight
+    Result := FtApp().ScreenHeight - DOCK_HEIGHT - DOCK_BOTTOM_MARGIN
   else
-    sh := 1080;
-  Result := sh - DOCK_HEIGHT - DOCK_BOTTOM_MARGIN;
+    Result := 1080 - DOCK_HEIGHT - DOCK_BOTTOM_MARGIN;
 end;
+
+// ---------------------------------------------------------------- model
+
+function TShellDock.EntryCount(): Integer;
+begin
+  Result := Length(FEntries);
+end;
+
+function TShellDock.EntryAppKey(AIndex: Integer): string;
+begin
+  Result := '';
+  if (AIndex >= 0) and (AIndex < Length(FEntries)) then
+    Result := FEntries[AIndex].AppKey;
+end;
+
+function TShellDock.EntryRunning(AIndex: Integer): Boolean;
+begin
+  Result := False;
+  if (AIndex >= 0) and (AIndex < Length(FEntries)) then
+    Result := Length(FEntries[AIndex].Windows) > 0;
+end;
+
+function TShellDock.EntryFocused(AIndex: Integer): Boolean;
+begin
+  Result := False;
+  if (AIndex >= 0) and (AIndex < Length(FEntries)) then
+    Result := FEntries[AIndex].IsActive;
+end;
+
+function TShellDock.EntryPinned(AIndex: Integer): Boolean;
+begin
+  Result := False;
+  if (AIndex >= 0) and (AIndex < Length(FEntries)) then
+    Result := FEntries[AIndex].Pinned;
+end;
+
+function TShellDock.EntryWindowCountAt(AIndex: Integer): Integer;
+begin
+  Result := 0;
+  if (AIndex >= 0) and (AIndex < Length(FEntries)) then
+    Result := Length(FEntries[AIndex].Windows);
+end;
+
+function TShellDock.IndexOfKey(const AAppKey: string): Integer;
+var
+  i: Integer;
+begin
+  Result := -1;
+  for i := 0 to High(FEntries) do
+    if SameText(FEntries[i].AppKey, AAppKey) then
+      Exit(i);
+end;
+
+// Rebuild the entry list from the pinned list plus the windows that currently exist.
+// Pinned apps come first, in config order, then unpinned running apps.
+procedure TShellDock.BuildEntries();
+var
+  i, j, k, winCount: Integer;
+  tmp: TDockEntry;
+  key, resName, resClass: string;
+  activeWin: Cardinal;
+  win: Cardinal;
+begin
+  // Keep the widgets: they are reused by LayoutButtons when the key is unchanged.
+  for i := 0 to High(FEntries) do
+  begin
+    FEntries[i].Windows := nil;
+    FEntries[i].IsActive := False;
+  end;
+
+  activeWin := QueryActiveWindow();
+  winCount := TaskCount;
+
+  for i := 0 to winCount - 1 do
+  begin
+    win := GetTaskWindow(i);
+    if win = 0 then Continue;
+
+    QueryWindowClass(win, resName, resClass);
+    key := FDockApps.AppKeyForWindow(resName, resClass);
+    if key = '' then Continue;
+
+    j := IndexOfKey(key);
+    if j < 0 then
+    begin
+      SetLength(FEntries, Length(FEntries) + 1);
+      j := High(FEntries);
+      FEntries[j].AppKey := key;
+      FEntries[j].Title := FDockApps.AppNameForKey(key);
+      FEntries[j].Pinned := FDockApps.IsPinned(key);
+      FEntries[j].Windows := nil;
+      FEntries[j].Button := nil;
+      FEntries[j].Menu := nil;
+      FEntries[j].MenuPin := nil;
+    end;
+
+    k := Length(FEntries[j].Windows);
+    SetLength(FEntries[j].Windows, k + 1);
+    FEntries[j].Windows[k] := win;
+
+    if win = activeWin then
+      FEntries[j].IsActive := True;
+  end;
+
+  // Drop running entries that are no longer pinned and no longer running.
+  i := 0;
+  while i < Length(FEntries) do
+  begin
+    if (Length(FEntries[i].Windows) = 0) and not FEntries[i].Pinned then
+    begin
+      if Assigned(FEntries[i].Button) then begin
+        if Assigned(FEntries[i].Menu) then
+          FEntries[i].Button.ContextMenuHandle := nil;
+        FEntries[i].Button.Free();
+      end;
+      if Assigned(FEntries[i].Menu) then
+        FEntries[i].Menu.Free();
+
+      for j := i to Length(FEntries) - 2 do
+        FEntries[j] := FEntries[j + 1];
+      SetLength(FEntries, Length(FEntries) - 1);
+    end
+    else
+      Inc(i);
+  end;
+
+  // A pinned app that has come and gone keeps Pinned set; refresh the flag because the
+  // user may have unpinned it from the menu since the entry was created.
+  for i := 0 to High(FEntries) do
+  begin
+    FEntries[i].Pinned := FDockApps.IsPinned(FEntries[i].AppKey);
+    FEntries[i].Title := FDockApps.AppNameForKey(FEntries[i].AppKey);
+  end;
+
+  // Pinned entries to the front, keeping relative order otherwise. Without this the
+  // icons jump around as apps start and stop, which defeats the point of pinning.
+  if Length(FEntries) > 1 then
+    for i := 1 to High(FEntries) do
+    begin
+      j := i;
+      while (j > 0) and FEntries[j].Pinned and (not FEntries[j - 1].Pinned) do
+      begin
+        tmp := FEntries[j];
+        FEntries[j] := FEntries[j - 1];
+        FEntries[j - 1] := tmp;
+        Dec(j);
+      end;
+    end;
+end;
+
+procedure TShellDock.FreeEntries();
+var
+  i: Integer;
+begin
+  for i := 0 to High(FEntries) do
+  begin
+    if Assigned(FEntries[i].Button) then
+    begin
+      if Assigned(FEntries[i].Menu) then
+        FEntries[i].Button.ContextMenuHandle := nil;
+      FEntries[i].Button.Free();
+    end;
+    if Assigned(FEntries[i].Menu) then
+      FEntries[i].Menu.Free();
+  end;
+  SetLength(FEntries, 0);
+end;
+
+// Draws the running indicator under the icon. AUserData carries the entry index, so
+// the painter needs no lookup through the widget tree.
+procedure DockButtonOverlay(Button: Pointer; ACanvas: Pointer;
+  AX, AY, AW, AH: Double; AState: cint32; AUserData: Pointer); cdecl;
+var
+  idx: Integer;
+  cv: TFtCanvas;
+  radius, cxp, cyp: Double;
+  focused: Boolean;
+begin
+  if (ACanvas = nil) or (GActiveDock = nil) then Exit;
+  idx := PtrInt(AUserData);
+  if (idx < 0) or (idx >= GActiveDock.EntryCount) then Exit;
+  if GActiveDock.EntryWindowCountAt(idx) = 0 then Exit;
+
+  focused := GActiveDock.EntryFocused(idx);
+  // AX/AY are the button's position in WINDOW coordinates, not offsets inside it, so
+  // the dot is placed relative to the button's own rectangle.
+  cxp := AX + (AW / 2);
+  cyp := AY + AH + 4;
+  radius := DOT_SIZE / 2;
+
+  cv := TFtCanvas.Create(ACanvas);
+  try
+    if focused then
+      cv.DrawCircle(cxp, cyp, radius, 0.95, 0.95, 0.98, 1.0)
+    else
+      cv.DrawCircle(cxp, cyp, radius - 0.5, 0.55, 0.58, 0.64, 0.85);
+  finally
+    cv.Free();
+  end;
+end;
+
+// ---------------------------------------------------------------- layout
 
 procedure TShellDock.LayoutButtons();
 var
-  count, i, x, iconX, iconY, btnSize, wantW: Integer;
-  dispTitle: string;
+  i, iconX, iconY, x, wantW: Integer;
   iconBmp: TFtBitmap;
 begin
   if FWindow = nil then Exit;
 
-  count := TaskCount;
+  BuildEntries();
 
-  // The plate is as wide as its contents. Resize in place rather than recreating the
-  // window: a destroyed window drops its strut, and every maximized client on the
-  // desktop then expands into the gap and snaps back when the replacement maps.
-  //
-  // Resize and then carry on laying out in the SAME pass. An earlier version resized
-  // and returned, on the reasoning that the resize would re-enter the layout. It does
-  // not -- ResizeWindow only resizes, repositions and invalidates -- so nothing ever
-  // laid out the new buttons: every task after the first kept a nil or stale Button
-  // until some unrelated refresh happened to run at the new width. That showed up as
-  // the newest icon missing and the row being unclickable.
+  // Resize in place, in the same pass. Recreating the window would drop its strut and
+  // make every maximized client flash.
   wantW := DesiredWidth();
   if wantW <> FPanelWidth then
     ResizeWindow(wantW, DOCK_HEIGHT, (ScreenWidthHint() - wantW) div 2);
 
-  if count = 0 then
+  iconY := 8;
+
+  if Length(FEntries) = 0 then
   begin
     FWindow.Invalidate();
     Exit;
   end;
 
-  btnSize := FIconSize;
-  iconY := (DOCK_HEIGHT - btnSize) div 2;
-
-  // Icons are centred in the plate when the cap bites and the row would otherwise
-  // be left-aligned with slack on the right.
-  iconX := (PanelWidth() - (count * btnSize) - ((count - 1) * DOCK_GAP)) div 2;
+  iconX := (PanelWidth() - (Length(FEntries) * FIconSize) -
+            ((Length(FEntries) - 1) * DOCK_GAP)) div 2;
   if iconX < DOCK_PADDING then
     iconX := DOCK_PADDING;
 
-  for i := 0 to count - 1 do
+  for i := 0 to High(FEntries) do
   begin
-    x := iconX + (i * (btnSize + DOCK_GAP));
+    x := iconX + (i * (FIconSize + DOCK_GAP));
 
-    // The caption is still set, but IconPosition is ftipOnly so it is not drawn.
-    // It stays because the button's accessible name and the context menu's
-    // association both come from it, and a dock icon with no title is unhelpful in
-    // a screen reader or a tooltip.
-    dispTitle := FTasks[i].Title;
-
-    if FTasks[i].Button = nil then
+    if FEntries[i].Button = nil then
     begin
-      FTasks[i].Button := TFtButton.Create(FWindow, x, iconY, btnSize, btnSize, dispTitle);
-      FTasks[i].Button.IsToggle := True;
-      FTasks[i].Button.Flat := True;
-      FTasks[i].Button.CornerRadius := 10.0;
-      FTasks[i].Button.IconPosition := ftipOnly;
-      FTasks[i].Button.Tag := PtrInt(FTasks[i].Window);
-      FTasks[i].Button.OnClick := @HandleTaskButtonClick;
+      FEntries[i].Button := TFtButton.Create(FWindow, x, iconY, FIconSize, FIconSize,
+                                             FEntries[i].Title);
+      FEntries[i].Button.IsToggle := True;
+      FEntries[i].Button.Flat := True;
+      FEntries[i].Button.CornerRadius := 10.0;
+      FEntries[i].Button.IconPosition := ftipOnly;
+      FEntries[i].Button.OnClick := @HandleEntryClick;
     end
     else
+      FEntries[i].Button.SetBounds(x, iconY, FIconSize, FIconSize);
+
+    FEntries[i].Button.Tag := i;
+    FEntries[i].Button.Caption := FEntries[i].Title;
+
+    if FEntries[i].Menu = nil then
     begin
-      FTasks[i].Button.SetBounds(x, iconY, btnSize, btnSize);
-      FTasks[i].Button.Caption := dispTitle;
-      FTasks[i].Button.IconPosition := ftipOnly;
+      FEntries[i].Menu := TFtPopupMenu.Create(FWindow);
+      if FEntries[i].Menu <> nil then
+      begin
+        FEntries[i].MenuPin := FEntries[i].Menu.AddItem('Pin to dock', @HandleEntryMenuPin);
+        if Assigned(FEntries[i].MenuPin) then
+          FEntries[i].MenuPin.Tag := i;
+      end;
+    end
+    else if Assigned(FEntries[i].MenuPin) then
+    begin
+      FEntries[i].MenuPin.Tag := i;
+      if FEntries[i].Pinned and FDockApps.HasDesktopEntry(FEntries[i].AppKey) then
+        FEntries[i].MenuPin.Caption := 'Unpin from dock'
+      else if FDockApps.HasDesktopEntry(FEntries[i].AppKey) then
+        FEntries[i].MenuPin.Caption := 'Pin to dock';
     end;
 
-    if Assigned(FTasks[i].Menu) then
-      FTasks[i].Button.ContextMenuHandle := FTasks[i].Menu.Handle;
+    if Assigned(FEntries[i].Menu) then
+      FEntries[i].Button.ContextMenuHandle := FEntries[i].Menu.Handle;
 
-    // Icons are fetched at the size actually drawn, so the dock gets a crisp 48px
-    // image rather than an 18px one scaled up.
-    iconBmp := GetOrLoadWindowIcon(FTasks[i].Window, FIconSize);
+    iconBmp := IconForApp(FEntries[i].AppKey, FIconSize);
     if Assigned(iconBmp) then
     begin
-      FTasks[i].Button.SetIconBitmap(iconBmp, False);
-      FTasks[i].Button.SetIconSize(FIconSize, FIconSize);
-      FTasks[i].Button.IconGap := 0;
+      FEntries[i].Button.SetIconBitmap(iconBmp, False);
+      FEntries[i].Button.SetIconSize(FIconSize, FIconSize);
+      FEntries[i].Button.IconGap := 0;
     end
     else
-      FTasks[i].Button.ClearIcon();
+      FEntries[i].Button.ClearIcon();
 
-    // The active window and any minimized one both get a visual difference; the
-    // taskbar used Toggled only. A dock needs to show "this is running" as well as
-    // "this is focused", or a single task looks like a static icon.
-    FTasks[i].Button.Toggled := FTasks[i].IsActive;
+    // The active app gets the toggled plate; the dot below carries running/focused.
+    FEntries[i].Button.Toggled := FEntries[i].IsActive;
+
+    // The running indicator is drawn by the button's own paint overlay, not by a
+    // child widget: a child at the bottom of the stack is covered by its siblings, and
+    // a drawing area above them would intercept clicks meant for the icon.
+    FEntries[i].Button.SetOnPaint(@DockButtonOverlay, Pointer(PtrInt(i)));
   end;
 
   FWindow.Invalidate();
+end;
+
+function TShellDock.IconForApp(const AAppKey: string; APreferredSize: Integer): TFtBitmap;
+var
+  i, idx: Integer;
+  path: string;
+begin
+  Result := nil;
+  if AAppKey = '' then Exit;
+
+  i := FIconKeys.IndexOf(AAppKey);
+  if i >= 0 then
+    Exit(TFtBitmap(FIconBitmaps[i]));
+
+  // A pinned app that is not running has no windows to take an icon from, so the
+  // desktop entry's icon is the only source.
+  path := '';
+  if FDockApps.AppIconForKey(AAppKey) <> '' then
+    path := ResolveIconPath(FDockApps.AppIconForKey(AAppKey), APreferredSize);
+
+  if path <> '' then
+    Result := LoadIconBitmap(path, APreferredSize, APreferredSize);
+
+  if Result = nil then
+  begin
+    idx := IndexOfKey(AAppKey);
+    if (idx >= 0) and (Length(FEntries[idx].Windows) > 0) then
+      Result := QueryWindowIcon(FEntries[idx].Windows[0], APreferredSize);
+  end;
+
+  if Result = nil then
+    Result := CreateFallbackIcon(APreferredSize, APreferredSize);
+
+  FIconKeys.Add(AAppKey);
+  FIconBitmaps.Add(Result);
+end;
+
+function TShellDock.DotWidth(): Double;
+begin
+  Result := DOT_SIZE;
+end;
+
+// Draws the running indicator under the icon. AUserData carries the entry index, so
+// the painter needs no lookup and no global state.
+
+// ---------------------------------------------------------------- interaction
+
+procedure TShellDock.HandleEntryClick(Sender: TFtButton);
+var
+  idx: Integer;
+begin
+  if Sender = nil then Exit;
+  idx := Integer(Sender.Tag);
+  if (idx < 0) or (idx >= Length(FEntries)) then Exit;
+
+  // Several windows: let the user pick one. One window: just activate. None: launch.
+  if Length(FEntries[idx].Windows) > 1 then
+    ShowWindowList(FEntries[idx].AppKey)
+  else
+    ActivateOrLaunch(FEntries[idx].AppKey);
+end;
+
+procedure TShellDock.ActivateOrLaunch(const AAppKey: string);
+var
+  idx: Integer;
+  win: Cardinal;
+begin
+  idx := IndexOfKey(AAppKey);
+  if (idx < 0) then Exit;
+
+  if Length(FEntries[idx].Windows) = 0 then
+  begin
+    FDockApps.Launch(AAppKey);
+    Exit;
+  end;
+
+  win := FEntries[idx].Windows[Length(FEntries[idx].Windows) - 1];
+  ActivateWindow(win);
+end;
+
+procedure TShellDock.ShowWindowList(const AAppKey: string);
+var
+  idx, i: Integer;
+  item: TFtMenuItem;
+  title: string;
+begin
+  idx := IndexOfKey(AAppKey);
+  if idx < 0 then Exit;
+
+  if Assigned(FWindowList) then
+  begin
+    FWindowList.Free();
+    FWindowList := nil;
+  end;
+
+  FWindowList := TFtPopupMenu.Create(FWindow);
+  if FWindowList = nil then Exit;
+  FWindowListKey := AAppKey;
+
+  for i := 0 to High(FEntries[idx].Windows) do
+  begin
+    title := QueryWindowTitle(FEntries[idx].Windows[i]);
+    if title = '' then
+      title := FDockApps.AppNameForKey(AAppKey);
+    item := FWindowList.AddItem(title, @HandleWindowListItem);
+    if item <> nil then
+      item.Tag := Int64(FEntries[idx].Windows[i]);
+  end;
+
+  // Anchor the list above the icon that opened it.
+  FWindowList.Show(FWindow.X + (PanelWidth() div 2), PanelY() - 8);
+end;
+
+procedure TShellDock.HandleWindowListItem(Sender: TFtMenuItem);
+begin
+  if (Sender = nil) or (Sender.Tag = 0) then Exit;
+  ActivateWindow(Cardinal(Sender.Tag));
+end;
+
+procedure TShellDock.HandleEntryMenuPin(Sender: TFtMenuItem);
+var
+  idx: Integer;
+begin
+  if Sender = nil then Exit;
+  idx := Sender.Tag;
+  if (idx < 0) or (idx >= Length(FEntries)) then Exit;
+
+  if FDockApps.IsPinned(FEntries[idx].AppKey) then
+  begin
+    FDockApps.Unpin(FEntries[idx].AppKey);
+    FEntries[idx].Pinned := False;
+  end
+  else if FDockApps.Pin(FEntries[idx].AppKey) then
+    FEntries[idx].Pinned := True;
+
+  FWindow.Invalidate();
+end;
+
+procedure TShellDock.RefreshDock();
+begin
+  if FWindow = nil then Exit;
+  LayoutButtons();
 end;
 
 end.
