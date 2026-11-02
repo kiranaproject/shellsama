@@ -25,6 +25,7 @@ type
     procedure TestDockWindowIdentity();
     procedure TestDockPlateWidthMatchesContents();
     procedure TestDockTickIsSafe();
+    procedure TestResizeKeepsTheSameWindow();
   end;
 
 implementation
@@ -122,6 +123,39 @@ begin
   AssertNotNull('Dock survives Tick', FDock);
   FDock.RefreshTasks();
   AssertNotNull('Dock survives RefreshTasks', FDock);
+end;
+
+// Resizing the plate must not recreate the window. Recreating it drops its
+// _NET_WM_STRUT, so wmsama recomputes the work area without the dock, every
+// maximized client expands into the gap and snaps back when the replacement maps.
+// That is the flicker reported after opening or closing a window.
+//
+// The check is a marker the recreated window could not keep: SetupWindow always
+// titles the dock 'shellsama-dock', so a custom title surviving the resize proves the
+// same window was kept. Comparing the X window id does NOT work -- the server reuses
+// ids after a destroy, so that assertion passed even with the window recreated.
+procedure TDockTest.TestResizeKeepsTheSameWindow();
+var
+  beforeW: Integer;
+  marker: string;
+begin
+  AssertNotNull('Dock window exists', FDock.WindowWidget);
+  beforeW := FDock.PanelWidth();
+
+  marker := 'dock-marker-survives-resize';
+  FDock.WindowWidget.Title := marker;
+
+  // A width change of the kind a task appearing causes.
+  FDock.ResizeWindow(beforeW + 54, 78, 100);
+
+  AssertNotNull('Dock window still exists', FDock.WindowWidget);
+  AssertEquals('the same window survived the resize: title kept',
+               marker, FDock.WindowWidget.Title);
+  AssertEquals('panel width followed the resize', beforeW + 54, FDock.PanelWidth());
+  AssertEquals('panel height unchanged', 78, FDock.PanelHeight());
+
+  // Put the title back so the rest of the suite sees a normal dock.
+  FDock.WindowWidget.Title := 'shellsama-dock';
 end;
 
 initialization

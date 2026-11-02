@@ -35,6 +35,7 @@ type
     procedure LayoutButtons(); override;
     // Width the plate needs for its current contents.
     function DesiredWidth(): Integer;
+    function ScreenWidthHint(): Integer;
   public
     constructor Create(ALauncher: TShellLauncher = nil);
     destructor Destroy(); override;
@@ -103,6 +104,14 @@ begin
   FWindow.Invalidate();
 end;
 
+function TShellDock.ScreenWidthHint(): Integer;
+begin
+  if FtIsLibLoaded() and Assigned(ft_screen_get_width) then
+    Result := FtApp().ScreenWidth
+  else
+    Result := 1920;
+end;
+
 function TShellDock.DesiredWidth(): Integer;
 var
   n, wanted: Integer;
@@ -135,16 +144,9 @@ begin
 end;
 
 function TShellDock.PanelX(): Integer;
-var
-  sw: Integer;
 begin
-  // Centred. The remaining screen width would be 2560 on an ultrawide, so centring
-  // on a strut-adjusted area is not needed: the plate is symmetric.
-  if FtIsLibLoaded() and Assigned(ft_screen_get_width) then
-    sw := FtApp().ScreenWidth
-  else
-    sw := 1920;
-  Result := (sw - PanelWidth()) div 2;
+  // Centred. The plate is symmetric, so the strut-adjusted work area is not needed.
+  Result := (ScreenWidthHint() - PanelWidth()) div 2;
 end;
 
 function TShellDock.PanelY(): Integer;
@@ -168,19 +170,19 @@ begin
 
   count := TaskCount;
 
-  // The plate is as wide as its contents. A window's size is fixed at creation, so
-  // when the contents change size the window is rebuilt. Rebuilding from inside the
-  // layout pass would re-enter (SetupWindow calls RefreshTasks, which calls this),
-  // so the rebuild is recorded and re-run once below instead of recursing.
+  // The plate is as wide as its contents. Resize in place rather than recreating the
+  // window: a destroyed window drops its strut, and every maximized client on the
+  // desktop then expands into the gap and snaps back when the replacement maps.
+  // Resizing from inside the layout pass would re-enter (SetupWindow calls
+  // RefreshTasks, which calls this), so the resize is guarded and re-run once.
   wantW := DesiredWidth();
   if wantW <> FPanelWidth then
   begin
-    FPanelWidth := wantW;
     if not FRebuilding then
     begin
       FRebuilding := True;
       try
-        RebuildWindow();
+        ResizeWindow(wantW, DOCK_HEIGHT, (ScreenWidthHint() - wantW) div 2);
       finally
         FRebuilding := False;
       end;

@@ -113,10 +113,7 @@ type
 
     // Window title, so a dock is identifiable in a window list.
     function WindowTitle(): string; virtual;
-    // Destroy and recreate the panel window, keeping the task set. Needed because a
-    // window's size is fixed when it is created: a surface whose width follows its
-    // contents has to be rebuilt when the contents change size.
-    procedure RebuildWindow();
+
 
   private
     procedure BuildTaskMenu(var ATask: TTaskItem);
@@ -125,6 +122,10 @@ type
     procedure HandleTaskMenuMaximize(Sender: TFtMenuItem);
     procedure HandleTaskMenuClose(Sender: TFtMenuItem);
   public
+    // Resize and reposition without destroying the window. Recreating it would drop
+    // its strut and make every maximized client flash until the new one mapped.
+    procedure ResizeWindow(AWidth, AHeight: Integer; AX: Integer = 0);
+
     // AWidth/AHeight of 0 mean "the taskbar's own geometry". A dock passes its own,
     // because the toolkit fixes a window's size at creation and offers no resize.
     constructor Create(ALauncher: TShellLauncher = nil;
@@ -468,51 +469,36 @@ begin
   Result := 'shellsama-bottom-panel';
 end;
 
-procedure TShellTaskSurface.RebuildWindow();
-var
-  i: Integer;
-  wasVisible: Boolean;
+// Resize and reposition the panel window without destroying it.
+//
+// This replaces an earlier RebuildWindow, which freed and recreated the window. That
+// was wrong for a dock: destroying the window drops its _NET_WM_STRUT, so wmsama
+// recomputes the work area without it, every maximized client expands into the gap,
+// and then snaps back when the replacement window maps. Visible as a flicker on
+// every task change.
+procedure TShellTaskSurface.ResizeWindow(AWidth, AHeight: Integer; AX: Integer = 0);
 begin
-  if not FtIsLibLoaded() then Exit;
+  if (FWindow = nil) or not FtIsLibLoaded() then Exit;
+  if (AWidth <= 0) or (AHeight <= 0) then Exit;
 
-  wasVisible := FIsVisible;
+  FPanelWidth := AWidth;
+  FPanelHeight := AHeight;
 
-  // Buttons and their context menus are both children of the window being freed, so
-  // both are released first. The menus matter as much as the buttons: BuildTaskMenu
-  // returns early when a task already owns a menu, so a surviving menu would keep
-  // pointing into freed memory and crash the next time its caption was set.
-  for i := 0 to High(FTasks) do
-  begin
-    if Assigned(FTasks[i].Button) then
-    begin
-      if Assigned(FTasks[i].Menu) then
-        FTasks[i].Button.ContextMenuHandle := nil;
-      FTasks[i].Button.Free();
-      FTasks[i].Button := nil;
-    end;
-    if Assigned(FTasks[i].Menu) then
-    begin
-      FTasks[i].Menu.Free();
-      FTasks[i].Menu := nil;
-      FTasks[i].MenuMinimize := nil;
-      FTasks[i].MenuMaximize := nil;
-      FTasks[i].MenuClose := nil;
-    end;
-  end;
+  FWindow.SetSize(AWidth, AHeight);
+  // 0 is the only meaningful "leave the X alone" value here: the taskbar spans the
+  // screen from 0 and has nothing to move.
+  if AX <> 0 then
+    FWindow.SetPosition(AX, PanelY());
 
-  if Assigned(FWindow) then
-  begin
-    FWindow.Free();
-    FWindow := nil;
-  end;
+  // The strut covers the panel's horizontal extent, so it follows the new width.
+  // Re-setting it does not remove it in between, which is what caused the flicker.
+  FWindow.SetStrutPartial(
+    0, 0, 0, FPanelHeight,
+    0, 0, 0, 0, 0, 0,
+    0, FPanelWidth - 1
+  );
 
-  SetupWindow();
-
-  if wasVisible and Assigned(FWindow) then
-  begin
-    FWindow.Show();
-    FIsVisible := True;
-  end;
+  FWindow.Invalidate();
 end;
 
 procedure TShellTaskSurface.SetupWindow();
