@@ -28,7 +28,8 @@ type
     procedure TestDockTickIsSafe();
     procedure TestResizeKeepsTheSameWindow();
     procedure TestPinnedAppsAppearWithNothingRunning();
-    procedure TestIconsShrinkToFitTheWidthCap();
+    procedure TestWideDockScrollsInsteadOfShrinking();
+    procedure TestScrollingIsClampedAtBothEnds();
   end;
 
 implementation
@@ -250,39 +251,71 @@ begin
   end;
 end;
 
-// Past the width cap the icon row must still fit inside the plate. It used to keep
-// full-size icons, so with enough apps the row overflowed both edges of the plate and
-// the outermost icons were only half visible.
-procedure TDockTest.TestIconsShrinkToFitTheWidthCap();
+// Past the width cap the row scrolls rather than shrinking. Shrinking was tried first
+// and made a busy dock unreadable; icons now stay at their full size and the row slides.
+procedure TDockTest.TestWideDockScrollsInsteadOfShrinking();
 var
   launcher: TShellLauncher;
   dock: TShellDock;
-  btn, ix, n, rightmost: Integer;
+  n: Integer;
 begin
   launcher := TShellLauncher.Create();
   try
     dock := TShellDock.Create(launcher);
     try
-      // A few icons: full size, centred, comfortably inside.
+      // A few icons: full size, no scroll.
       dock.DebugPopulateEntries(3);
       AssertEquals('three icons keep full size', 48, dock.LayoutIconSize());
-      AssertTrue('three icons start inside the plate', dock.LayoutIconX() >= 0);
+      AssertEquals('nothing to scroll with three icons', 0, dock.MaxScroll());
+      AssertEquals('no scroll offset when it fits', 0, dock.ScrollOffset());
 
-      // Enough icons to exceed the cap. 16*48 + 15*6 + 20 = 878 > 720.
+      // Enough to overflow the cap: 16*48 + 15*6 + 20 = 878 > 720.
       n := 16;
       dock.DebugPopulateEntries(n);
-      btn := dock.LayoutIconSize();
+      AssertEquals('icons are NOT shrunk', 48, dock.LayoutIconSize());
+      AssertTrue('there is content to scroll to', dock.MaxScroll() > 0);
+      AssertEquals('scroll starts at the beginning',
+                   0, dock.ScrollOffset());
 
-      AssertTrue('icons shrank to fit', btn < 48);
-      AssertTrue('icons did not shrink below the floor', btn >= 24);
+      // Scrolling moves the row and the first icon goes left of the padding.
+      AssertTrue('scrolling down moves the offset', dock.ScrollBy(54));
+      AssertEquals('offset moved by one step', 54, dock.ScrollOffset());
+      AssertTrue('the row slid left', dock.LayoutIconX() < 10);
+    finally
+      dock.Free();
+    end;
+  finally
+    launcher.Free();
+  end;
+end;
 
-      // The real assertion: the last icon's right edge is inside the plate.
-      ix := dock.LayoutIconX();
-      rightmost := ix + (n - 1) * (btn + 4) + btn;
-      AssertTrue(Format('the row fits: right edge %d <= plate width %d',
-                        [rightmost, dock.PanelWidth()]),
-                 rightmost <= dock.PanelWidth());
-      AssertTrue('the row starts inside the plate', ix >= 0);
+procedure TDockTest.TestScrollingIsClampedAtBothEnds();
+var
+  launcher: TShellLauncher;
+  dock: TShellDock;
+begin
+  launcher := TShellLauncher.Create();
+  try
+    dock := TShellDock.Create(launcher);
+    try
+      dock.DebugPopulateEntries(16);
+      AssertTrue('the dock can scroll', dock.MaxScroll() > 0);
+
+      // Far past the end.
+      dock.ScrollBy(100000);
+      AssertEquals('clamped to the maximum', dock.MaxScroll(), dock.ScrollOffset());
+      AssertFalse('further scrolling past the end does nothing', dock.ScrollBy(54));
+
+      // Far past the start.
+      dock.ScrollBy(-100000);
+      AssertEquals('clamped to zero', 0, dock.ScrollOffset());
+      AssertFalse('further scrolling before the start does nothing', dock.ScrollBy(-54));
+
+      // A dock that fits cannot be scrolled at all.
+      dock.DebugPopulateEntries(2);
+      AssertEquals('nothing to scroll', 0, dock.MaxScroll());
+      AssertFalse('scrolling a dock that fits is a no-op', dock.ScrollBy(54));
+      AssertEquals('and the offset stays zero', 0, dock.ScrollOffset());
     finally
       dock.Free();
     end;

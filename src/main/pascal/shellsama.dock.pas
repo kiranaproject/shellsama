@@ -51,6 +51,9 @@ type
     FLayoutIconSize : Integer;
     FLayoutIconX    : Integer;
     FSkipEntryRebuild: Boolean;
+    FScrollOffset   : Integer;   // pixels the row is scrolled left
+    FMaxScroll      : Integer;   // 0 when the row fits
+    FContentWidth   : Integer;
     FDockApps     : TShellDockApps;
     FEntries      : array of TDockEntry;
     FWindowList   : TFtPopupMenu;
@@ -67,6 +70,10 @@ type
     procedure HandleWindowListItem(Sender: TFtMenuItem);
     procedure ShowWindowList(const AAppKey: string);
     procedure ActivateOrLaunch(const AAppKey: string);
+    // Wheel over the dock: buttons 4 and 5 are vertical, 6 and 7 horizontal. The
+    // toolkit forwards wheel events from child buttons up to the window, so this sees
+    // them wherever the pointer is over an icon.
+    procedure HandleDockMouseDown(Sender: TFtWindow; AX, AY, AButton: Integer);
     // Icon for an application: the desktop entry's icon, else the first window's.
     // Cached per app key because the dock draws one icon per app, not per window.
     function IconForApp(const AAppKey: string; APreferredSize: Integer): TFtBitmap;
@@ -91,6 +98,10 @@ type
     // Adds APinnedCount placeholder entries and lays out, so the fit arithmetic can be
     // exercised without starting a dozen real applications. Test use only.
     procedure DebugPopulateEntries(ACount: Integer);
+    // Scroll by ADelta pixels, clamped. Returns True if anything moved.
+    function ScrollBy(ADelta: Integer): Boolean;
+    function ScrollOffset(): Integer;
+    function MaxScroll(): Integer;
     // Icon side length the last layout used, after any shrink-to-fit.
     function LayoutIconSize(): Integer;
     function LayoutIconX(): Integer;
@@ -124,9 +135,6 @@ const
   // plate must end at 65. 66 rows total.
   DOCK_HEIGHT        = 66;
   DOCK_BOTTOM_MARGIN = 8;
-  // Icons shrink to fit the width cap, but not below this: past it the dock
-  // would be unreadable and the correct fix is scrolling, not smaller icons.
-  DOCK_MIN_ICON      = 24;
   DOT_SIZE           = 6;
 
 // Only declarations the window paint path honours: a background colour and a border
@@ -199,6 +207,7 @@ begin
   if FWindow = nil then Exit;
   FWindow.Style := DOCK_PLATE_CSS;
   FWindow.BackgroundOpacity := 0.82;
+  FWindow.OnMouseDown := @HandleDockMouseDown;
 
   if Assigned(ft_style_append_css_string) then
     ft_style_append_css_string(PChar(DOCK_ICON_CSS));
@@ -255,6 +264,43 @@ begin
   Result := Length(FEntries);
 end;
 
+function TShellDock.ScrollBy(ADelta: Integer): Boolean;
+var
+  before: Integer;
+begin
+  before := FScrollOffset;
+  FScrollOffset := FScrollOffset + ADelta;
+  if FScrollOffset > FMaxScroll then
+    FScrollOffset := FMaxScroll;
+  if FScrollOffset < 0 then
+    FScrollOffset := 0;
+  Result := FScrollOffset <> before;
+  if Result then
+    LayoutButtons();
+end;
+
+function TShellDock.ScrollOffset(): Integer;
+begin
+  Result := FScrollOffset;
+end;
+
+function TShellDock.MaxScroll(): Integer;
+begin
+  Result := FMaxScroll;
+end;
+
+procedure TShellDock.HandleDockMouseDown(Sender: TFtWindow; AX, AY, AButton: Integer);
+const
+  WHEEL_STEP = 54;   // one icon plus one gap
+begin
+  case AButton of
+    4: ScrollBy(-WHEEL_STEP);   // wheel up
+    5: ScrollBy(WHEEL_STEP);    // wheel down
+    6: ScrollBy(-WHEEL_STEP);   // wheel left (horizontal wheels)
+    7: ScrollBy(WHEEL_STEP);    // wheel right
+  end;
+end;
+
 procedure TShellDock.DebugPopulateEntries(ACount: Integer);
 var
   i: Integer;
@@ -272,12 +318,10 @@ begin
   end;
   FLayoutIconSize := FIconSize;
   FLayoutIconX := 0;
+  // Stays set: the synthetic list is only replaced by another DebugPopulateEntries
+  // call, so scroll passes during a test do not rebuild it from (empty) live windows.
   FSkipEntryRebuild := True;
-  try
-    LayoutButtons();
-  finally
-    FSkipEntryRebuild := False;
-  end;
+  LayoutButtons();
 end;
 
 function TShellDock.LayoutIconSize(): Integer;
@@ -509,6 +553,7 @@ end;
 procedure TShellDock.LayoutButtons();
 var
   i, iconX, iconY, x, wantW, btnSize, gap, total: Integer;
+  opacity: Double;
   iconBmp: TFtBitmap;
 begin
   if FWindow = nil then Exit;
@@ -531,26 +576,33 @@ begin
     Exit;
   end;
 
-  // Fit the row inside the plate. Past the width cap the icons used to keep their
-  // full size, so the row overflowed both edges of the plate and the outermost icons
-  // were only half on screen. Shrinking them is what a dock is expected to do, and the
-  // icon bitmaps are re-fetched at the drawn size below so they stay crisp.
+  // Icons keep their size; when the row is wider than the plate the dock scrolls
+  // instead of shrinking. Shrinking was the earlier behaviour and it made a busy dock
+  // unreadable, which is the opposite of what a dock is for.
   btnSize := FIconSize;
   gap := DOCK_GAP;
   total := (Length(FEntries) * btnSize) + ((Length(FEntries) - 1) * gap);
-  if total + (2 * DOCK_PADDING) > PanelWidth() then
-  begin
-    gap := 4;
-    btnSize := (PanelWidth() - (2 * DOCK_PADDING) - (Length(FEntries) - 1) * gap)
-               div Length(FEntries);
-    if btnSize < DOCK_MIN_ICON then
-      btnSize := DOCK_MIN_ICON;
-    total := (Length(FEntries) * btnSize) + ((Length(FEntries) - 1) * gap);
-  end;
 
-  iconX := (PanelWidth() - total) div 2;
-  if iconX < DOCK_PADDING then
+  FContentWidth := total;
+  FMaxScroll := total + (2 * DOCK_PADDING) - PanelWidth();
+  if FMaxScroll < 0 then
+    FMaxScroll := 0;
+  // Clamp AFTER the new maximum is known. Clamping first truncates the offset using
+  // the previous layout's maximum, which silently undoes a scroll on the pass that
+  // changes the entry count.
+  if FScrollOffset > FMaxScroll then
+    FScrollOffset := FMaxScroll;
+  if FScrollOffset < 0 then
+    FScrollOffset := 0;
+
+  // Centred when the row fits, scrolled from the left padding when it does not.
+  if FMaxScroll = 0 then
+    iconX := (PanelWidth() - total) div 2
+  else
+    iconX := DOCK_PADDING - FScrollOffset;
+  if (FMaxScroll = 0) and (iconX < DOCK_PADDING) then
     iconX := DOCK_PADDING;
+
   iconY := (DOCK_HEIGHT - btnSize) div 2 - 3;
   FLayoutIconSize := btnSize;
   FLayoutIconX := iconX;
@@ -617,6 +669,21 @@ begin
     // child widget: a child at the bottom of the stack is covered by its siblings, and
     // a drawing area above them would intercept clicks meant for the icon.
     FEntries[i].Button.SetOnPaint(@DockButtonOverlay, Pointer(PtrInt(i)));
+
+    // Fade the icons that are leaving or entering at the clipped edge, when the row is
+    // scrolled. Nothing else marks the overflow, so without this the dock just looks
+    // cut off. Opacity is per widget, so this needs no window paint hook.
+    opacity := 1.0;
+    if FMaxScroll > 0 then
+    begin
+      if x < DOCK_PADDING then
+        opacity := 0.15 + (0.85 * ((x + btnSize - DOCK_PADDING) / btnSize))
+      else if x + btnSize > PanelWidth() - DOCK_PADDING then
+        opacity := 0.15 + (0.85 * (((PanelWidth() - DOCK_PADDING) - x) / btnSize));
+      if opacity < 0.15 then opacity := 0.15;
+      if opacity > 1.0 then opacity := 1.0;
+    end;
+    FEntries[i].Button.Opacity := opacity;
   end;
 
   FWindow.Invalidate();
