@@ -7,6 +7,7 @@ interface
 uses
   Classes, SysUtils, fpcunit, testregistry,
   ftpas.api, ftpas.types, ftpas,
+  ShellSama.DesktopApps,
   ShellSama.Launcher,
   ShellSama.BottomPanel,
   ShellSama.Dock;
@@ -26,6 +27,7 @@ type
     procedure TestDockPlateWidthMatchesContents();
     procedure TestDockTickIsSafe();
     procedure TestResizeKeepsTheSameWindow();
+    procedure TestPinnedAppsAppearWithNothingRunning();
   end;
 
 implementation
@@ -161,6 +163,90 @@ begin
 
   // Put the title back so the rest of the suite sees a normal dock.
   FDock.WindowWidget.Title := 'shellsama-dock';
+end;
+
+// A pinned app must be on the dock before it has ever been launched. Entries used to
+// be created only from running windows, so at startup -- with nothing running -- the
+// dock was empty even though the config listed apps, and a pinned app appeared only
+// after it had been opened once and closed again.
+procedure TDockTest.TestPinnedAppsAppearWithNothingRunning();
+var
+  cfgPath: string;
+  saved: string;
+  had: Boolean;
+  f: TStringList;
+  dock: TShellDock;
+  launcher: TShellLauncher;
+  apps: TDesktopAppList;
+  key: string;
+  i, found: Integer;
+begin
+  cfgPath := GetEnvironmentVariable('HOME') + '/.config/shellsama/pinned.conf';
+  had := FileExists(cfgPath);
+  saved := '';
+  if had then
+  begin
+    f := TStringList.Create();
+    try
+      f.LoadFromFile(cfgPath);
+      saved := f.Text;
+    finally
+      f.Free();
+    end;
+  end;
+
+  apps := TDesktopAppList.Create();
+  try
+    apps.LoadAll();
+    if apps.AppCount() = 0 then
+      raise EIgnoredTest.Create('no desktop entries installed');
+
+    key := apps.GetApp(0).DesktopId;
+    ForceDirectories(ExtractFileDir(cfgPath));
+    f := TStringList.Create();
+    try
+      f.Add(key);
+      f.SaveToFile(cfgPath);
+    finally
+      f.Free();
+    end;
+
+    launcher := TShellLauncher.Create();
+    try
+      dock := TShellDock.Create(launcher);
+      try
+        // Nothing is running in this test process, so the only way an entry can exist
+        // is if the pinned list seeded it.
+        found := -1;
+        for i := 0 to dock.EntryCount() - 1 do
+          if SameText(dock.EntryAppKey(i), key) then
+            found := i;
+
+        AssertTrue('the pinned app has an entry with nothing running', found >= 0);
+        AssertTrue('the entry is marked pinned', dock.EntryPinned(found));
+        AssertFalse('the entry is not running', dock.EntryRunning(found));
+        AssertEquals('no windows behind it', 0, dock.EntryWindowCountAt(found));
+      finally
+        dock.Free();
+      end;
+    finally
+      launcher.Free();
+    end;
+  finally
+    apps.Free();
+    if had then
+    begin
+      f := TStringList.Create();
+      try
+        f.Text := saved;
+        f.SaveToFile(cfgPath);
+      finally
+        f.Free();
+      end;
+    end
+    else if FileExists(cfgPath) then
+      DeleteFile(cfgPath);
+  end;
 end;
 
 initialization

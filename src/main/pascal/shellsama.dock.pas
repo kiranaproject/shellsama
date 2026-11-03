@@ -306,6 +306,27 @@ begin
   end;
 
   activeWin := QueryActiveWindow();
+
+  // Seed the pinned apps first. Without this an entry can only be created from a
+  // running window, so a pinned app showed up only after it had been launched once --
+  // and at startup, with nothing running, the dock was empty despite the config.
+  for i := 0 to FDockApps.PinnedCount() - 1 do
+  begin
+    key := FDockApps.PinnedKey(i);
+    if (key = '') or (IndexOfKey(key) >= 0) then Continue;
+
+    SetLength(FEntries, Length(FEntries) + 1);
+    j := High(FEntries);
+    FEntries[j].AppKey := key;
+    FEntries[j].Title := FDockApps.AppNameForKey(key);
+    FEntries[j].Pinned := True;
+    FEntries[j].Windows := nil;
+    FEntries[j].IsActive := False;
+    FEntries[j].Button := nil;
+    FEntries[j].Menu := nil;
+    FEntries[j].MenuPin := nil;
+  end;
+
   winCount := TaskCount;
 
   for i := 0 to winCount - 1 do
