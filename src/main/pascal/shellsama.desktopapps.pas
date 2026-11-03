@@ -83,6 +83,9 @@ function CreateFallbackIcon(const AWidth, AHeight: Integer): TFtBitmap;
 
 implementation
 
+uses
+  ShellSama.IconTheme;
+
 const
   MAX_RECENT = 4;
 
@@ -614,25 +617,18 @@ begin
   Result := (ext = '.png') or (ext = '.svg') or (ext = '.xpm') or (ext = '.svgz') or (ext = '.ico');
 end;
 
+// Resolution itself lives in ShellSama.IconTheme, which follows the freedesktop icon
+// theme specification instead of guessing at theme and directory names. The cache and
+// signature stay here so callers do not change.
 function ResolveIconPath(const AIconName: string; const APreferredSize: Integer = 48): string;
 var
   cacheKey: string;
   idx: Integer;
-  trimmedName: string;
-  userHome: string;
-  baseDirs: array[0..3] of string;
-  themes: array[0..2] of string;
-  sizes: array of string;
-  cats: array[0..6] of string;
-  exts: array of string;
-  bIdx, tIdx, sIdx, cIdx, eIdx: Integer;
-  testPath: string;
 begin
   Result := '';
-  trimmedName := Trim(AIconName);
-  if trimmedName = '' then Exit;
+  if Trim(AIconName) = '' then Exit;
 
-  cacheKey := trimmedName + '@' + IntToStr(APreferredSize);
+  cacheKey := AIconName + '@' + IntToStr(APreferredSize);
   if GIconPathCache <> nil then
   begin
     idx := GIconPathCache.IndexOfName(cacheKey);
@@ -643,134 +639,10 @@ begin
     end;
   end;
 
-  // 1. Direct path check
-  if (trimmedName[1] = '/') or (Pos('/', trimmedName) > 0) then
-  begin
-    if FileExists(trimmedName) then
-    begin
-      Result := trimmedName;
-      if GIconPathCache <> nil then
-        GIconPathCache.Values[cacheKey] := Result;
-      Exit;
-    end;
-  end;
-
-  // 2. Check /usr/share/pixmaps/
-  if HasValidIconExtension(trimmedName) then
-  begin
-    testPath := '/usr/share/pixmaps/' + trimmedName;
-    if FileExists(testPath) then
-    begin
-      Result := testPath;
-      if GIconPathCache <> nil then
-        GIconPathCache.Values[cacheKey] := Result;
-      Exit;
-    end;
-  end
-  else
-  begin
-    testPath := '/usr/share/pixmaps/' + trimmedName + '.png';
-    if FileExists(testPath) then
-    begin
-      Result := testPath;
-      if GIconPathCache <> nil then
-        GIconPathCache.Values[cacheKey] := Result;
-      Exit;
-    end;
-    testPath := '/usr/share/pixmaps/' + trimmedName + '.svg';
-    if FileExists(testPath) then
-    begin
-      Result := testPath;
-      if GIconPathCache <> nil then
-        GIconPathCache.Values[cacheKey] := Result;
-      Exit;
-    end;
-    testPath := '/usr/share/pixmaps/' + trimmedName + '.svgz';
-    if FileExists(testPath) then
-    begin
-      Result := testPath;
-      if GIconPathCache <> nil then
-        GIconPathCache.Values[cacheKey] := Result;
-      Exit;
-    end;
-    testPath := '/usr/share/pixmaps/' + trimmedName + '.xpm';
-    if FileExists(testPath) then
-    begin
-      Result := testPath;
-      if GIconPathCache <> nil then
-        GIconPathCache.Values[cacheKey] := Result;
-      Exit;
-    end;
-  end;
-
-  // 3. Search icon themes
-  userHome := GetEnvironmentVariable('HOME');
-  baseDirs[0] := userHome + '/.local/share/icons';
-  baseDirs[1] := userHome + '/.icons';
-  baseDirs[2] := '/usr/share/icons';
-  baseDirs[3] := '/usr/local/share/icons';
-
-  themes[0] := 'Yaru';
-  themes[1] := 'Adwaita';
-  themes[2] := 'hicolor';
-
-  if (Pos('display-im', LowerCase(trimmedName)) > 0) or (Pos('imagemagick', LowerCase(trimmedName)) > 0) then
-    sizes := ['scalable', '512x512', '256x256', '128x128', '64x64', '48x48', '32x32', '24x24', '16x16']
-  else if APreferredSize <= 24 then
-    sizes := ['24x24', '22x22', '16x16', '32x32', '48x48', '64x64', '128x128', '256x256', '512x512', 'scalable']
-  else if APreferredSize <= 32 then
-    sizes := ['32x32', '24x24', '48x48', '22x22', '16x16', '64x64', '128x128', '256x256', '512x512', 'scalable']
-  else if APreferredSize <= 48 then
-    sizes := ['48x48', '32x32', '64x64', '24x24', '128x128', '256x256', '512x512', 'scalable', '16x16']
-  else
-    sizes := ['128x128', '256x256', '512x512', '64x64', '48x48', 'scalable', '32x32', '24x24', '16x16'];
-
-  cats[0] := 'apps';
-  cats[1] := 'places';
-  cats[2] := 'categories';
-  cats[3] := 'devices';
-  cats[4] := 'status';
-  cats[5] := 'actions';
-  cats[6] := '';
-
-  if HasValidIconExtension(trimmedName) then
-    exts := ['']
-  else
-    exts := ['.png', '.svg', '.svgz', '.xpm'];
-
-  for bIdx := 0 to High(baseDirs) do
-  begin
-    if (baseDirs[bIdx] = '') or not DirectoryExists(baseDirs[bIdx]) then
-      Continue;
-
-    for tIdx := 0 to High(themes) do
-    begin
-      for sIdx := 0 to High(sizes) do
-      begin
-        for cIdx := 0 to High(cats) do
-        begin
-          for eIdx := 0 to High(exts) do
-          begin
-            if cats[cIdx] <> '' then
-              testPath := baseDirs[bIdx] + '/' + themes[tIdx] + '/' + sizes[sIdx] + '/' + cats[cIdx] + '/' + trimmedName + exts[eIdx]
-            else
-              testPath := baseDirs[bIdx] + '/' + themes[tIdx] + '/' + sizes[sIdx] + '/' + trimmedName + exts[eIdx];
-
-            if FileExists(testPath) then
-            begin
-              Result := testPath;
-              if GIconPathCache <> nil then
-                GIconPathCache.Values[cacheKey] := Result;
-              Exit;
-            end;
-          end;
-        end;
-      end;
-    end;
-  end;
+  Result := ResolveThemeIcon(AIconName, APreferredSize);
 
   if GIconPathCache <> nil then
-    GIconPathCache.Values[cacheKey] := '';
+    GIconPathCache.Values[cacheKey] := Result;
 end;
 
 function LoadIconBitmap(const APath: string; const AWidth, AHeight: Integer): TFtBitmap;

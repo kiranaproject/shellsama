@@ -6,6 +6,7 @@ uses
   Classes, SysUtils, fpcunit, testregistry, consoletestrunner,
   ShellSama.Test,
   ShellSama.DesktopApps.Test,
+  ShellSama.IconTheme.Test,
   ShellSama.Launcher.Test,
   ShellSama.TopPanel.Test,
   ShellSama.BottomPanel.Test,
