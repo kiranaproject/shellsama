@@ -28,6 +28,7 @@ type
     procedure TestDockTickIsSafe();
     procedure TestResizeKeepsTheSameWindow();
     procedure TestPinnedAppsAppearWithNothingRunning();
+    procedure TestIconsShrinkToFitTheWidthCap();
   end;
 
 implementation
@@ -246,6 +247,47 @@ begin
     end
     else if FileExists(cfgPath) then
       DeleteFile(cfgPath);
+  end;
+end;
+
+// Past the width cap the icon row must still fit inside the plate. It used to keep
+// full-size icons, so with enough apps the row overflowed both edges of the plate and
+// the outermost icons were only half visible.
+procedure TDockTest.TestIconsShrinkToFitTheWidthCap();
+var
+  launcher: TShellLauncher;
+  dock: TShellDock;
+  btn, ix, n, rightmost: Integer;
+begin
+  launcher := TShellLauncher.Create();
+  try
+    dock := TShellDock.Create(launcher);
+    try
+      // A few icons: full size, centred, comfortably inside.
+      dock.DebugPopulateEntries(3);
+      AssertEquals('three icons keep full size', 48, dock.LayoutIconSize());
+      AssertTrue('three icons start inside the plate', dock.LayoutIconX() >= 0);
+
+      // Enough icons to exceed the cap. 16*48 + 15*6 + 20 = 878 > 720.
+      n := 16;
+      dock.DebugPopulateEntries(n);
+      btn := dock.LayoutIconSize();
+
+      AssertTrue('icons shrank to fit', btn < 48);
+      AssertTrue('icons did not shrink below the floor', btn >= 24);
+
+      // The real assertion: the last icon's right edge is inside the plate.
+      ix := dock.LayoutIconX();
+      rightmost := ix + (n - 1) * (btn + 4) + btn;
+      AssertTrue(Format('the row fits: right edge %d <= plate width %d',
+                        [rightmost, dock.PanelWidth()]),
+                 rightmost <= dock.PanelWidth());
+      AssertTrue('the row starts inside the plate', ix >= 0);
+    finally
+      dock.Free();
+    end;
+  finally
+    launcher.Free();
   end;
 end;
 

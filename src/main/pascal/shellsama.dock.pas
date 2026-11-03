@@ -48,6 +48,9 @@ type
   private
     FIconSize     : Integer;
     FMaxDockWidth : Integer;
+    FLayoutIconSize : Integer;
+    FLayoutIconX    : Integer;
+    FSkipEntryRebuild: Boolean;
     FDockApps     : TShellDockApps;
     FEntries      : array of TDockEntry;
     FWindowList   : TFtPopupMenu;
@@ -85,6 +88,12 @@ type
     procedure RefreshDock();
 
     function EntryCount(): Integer;
+    // Adds APinnedCount placeholder entries and lays out, so the fit arithmetic can be
+    // exercised without starting a dozen real applications. Test use only.
+    procedure DebugPopulateEntries(ACount: Integer);
+    // Icon side length the last layout used, after any shrink-to-fit.
+    function LayoutIconSize(): Integer;
+    function LayoutIconX(): Integer;
     function EntryAppKey(AIndex: Integer): string;
     function EntryRunning(AIndex: Integer): Boolean;
     function EntryFocused(AIndex: Integer): Boolean;
@@ -115,6 +124,9 @@ const
   // plate must end at 65. 66 rows total.
   DOCK_HEIGHT        = 66;
   DOCK_BOTTOM_MARGIN = 8;
+  // Icons shrink to fit the width cap, but not below this: past it the dock
+  // would be unreadable and the correct fix is scrolling, not smaller icons.
+  DOCK_MIN_ICON      = 24;
   DOT_SIZE           = 6;
 
 // Only declarations the window paint path honours: a background colour and a border
@@ -241,6 +253,41 @@ end;
 function TShellDock.EntryCount(): Integer;
 begin
   Result := Length(FEntries);
+end;
+
+procedure TShellDock.DebugPopulateEntries(ACount: Integer);
+var
+  i: Integer;
+begin
+  FreeEntries();
+  SetLength(FEntries, ACount);
+  for i := 0 to ACount - 1 do
+  begin
+    FEntries[i].AppKey := 'test-app-' + IntToStr(i);
+    FEntries[i].Title := 'Test ' + IntToStr(i);
+    FEntries[i].Button := nil;
+    FEntries[i].Menu := nil;
+    FEntries[i].MenuPin := nil;
+    FEntries[i].Windows := nil;
+  end;
+  FLayoutIconSize := FIconSize;
+  FLayoutIconX := 0;
+  FSkipEntryRebuild := True;
+  try
+    LayoutButtons();
+  finally
+    FSkipEntryRebuild := False;
+  end;
+end;
+
+function TShellDock.LayoutIconSize(): Integer;
+begin
+  Result := FLayoutIconSize;
+end;
+
+function TShellDock.LayoutIconX(): Integer;
+begin
+  Result := FLayoutIconX;
 end;
 
 function TShellDock.EntryAppKey(AIndex: Integer): string;
@@ -461,12 +508,14 @@ end;
 
 procedure TShellDock.LayoutButtons();
 var
-  i, iconX, iconY, x, wantW: Integer;
+  i, iconX, iconY, x, wantW, btnSize, gap, total: Integer;
   iconBmp: TFtBitmap;
 begin
   if FWindow = nil then Exit;
 
-  BuildEntries();
+  // The test seam fills the list itself; rebuilding from windows would discard it.
+  if not FSkipEntryRebuild then
+    BuildEntries();
 
   // Resize in place, in the same pass. Recreating the window would drop its strut and
   // make every maximized client flash.
@@ -482,18 +531,37 @@ begin
     Exit;
   end;
 
-  iconX := (PanelWidth() - (Length(FEntries) * FIconSize) -
-            ((Length(FEntries) - 1) * DOCK_GAP)) div 2;
+  // Fit the row inside the plate. Past the width cap the icons used to keep their
+  // full size, so the row overflowed both edges of the plate and the outermost icons
+  // were only half on screen. Shrinking them is what a dock is expected to do, and the
+  // icon bitmaps are re-fetched at the drawn size below so they stay crisp.
+  btnSize := FIconSize;
+  gap := DOCK_GAP;
+  total := (Length(FEntries) * btnSize) + ((Length(FEntries) - 1) * gap);
+  if total + (2 * DOCK_PADDING) > PanelWidth() then
+  begin
+    gap := 4;
+    btnSize := (PanelWidth() - (2 * DOCK_PADDING) - (Length(FEntries) - 1) * gap)
+               div Length(FEntries);
+    if btnSize < DOCK_MIN_ICON then
+      btnSize := DOCK_MIN_ICON;
+    total := (Length(FEntries) * btnSize) + ((Length(FEntries) - 1) * gap);
+  end;
+
+  iconX := (PanelWidth() - total) div 2;
   if iconX < DOCK_PADDING then
     iconX := DOCK_PADDING;
+  iconY := (DOCK_HEIGHT - btnSize) div 2 - 3;
+  FLayoutIconSize := btnSize;
+  FLayoutIconX := iconX;
 
   for i := 0 to High(FEntries) do
   begin
-    x := iconX + (i * (FIconSize + DOCK_GAP));
+    x := iconX + (i * (btnSize + gap));
 
     if FEntries[i].Button = nil then
     begin
-      FEntries[i].Button := TFtButton.Create(FWindow, x, iconY, FIconSize, FIconSize,
+      FEntries[i].Button := TFtButton.Create(FWindow, x, iconY, btnSize, btnSize,
                                              FEntries[i].Title);
       FEntries[i].Button.IsToggle := True;
       FEntries[i].Button.Flat := True;
@@ -504,7 +572,7 @@ begin
       FEntries[i].Button.OnClick := @HandleEntryClick;
     end
     else
-      FEntries[i].Button.SetBounds(x, iconY, FIconSize, FIconSize);
+      FEntries[i].Button.SetBounds(x, iconY, btnSize, btnSize);
 
     FEntries[i].Button.Tag := i;
     FEntries[i].Button.Caption := FEntries[i].Title;
@@ -531,11 +599,11 @@ begin
     if Assigned(FEntries[i].Menu) then
       FEntries[i].Button.ContextMenuHandle := FEntries[i].Menu.Handle;
 
-    iconBmp := IconForApp(FEntries[i].AppKey, FIconSize);
+    iconBmp := IconForApp(FEntries[i].AppKey, btnSize);
     if Assigned(iconBmp) then
     begin
       FEntries[i].Button.SetIconBitmap(iconBmp, False);
-      FEntries[i].Button.SetIconSize(FIconSize, FIconSize);
+      FEntries[i].Button.SetIconSize(btnSize, btnSize);
       FEntries[i].Button.IconGap := 0;
     end
     else
