@@ -19,3 +19,7 @@ lib/
 *.orig
 .DS_Store
 scratch/
+
+# Python bytecode from the probe scripts
+__pycache__/
+*.pyc

@@ -11,10 +11,12 @@
                        exposes a paint hook for, and it also carries every mouse event
                        this popup needs.
 
-  The thumbnails are composited by the server into one 32-bit pixmap, read back once, and
-  handed to the canvas as a single image. That is the whole reason a preview is affordable
+  The thumbnails are composited by the server into one 32-bit pixmap, read back as a
+  single image, and handed to the canvas. That is the whole reason a preview is affordable
   here: the alternative, reading each window back at full size, is several megabytes per
-  window per frame. §7 of the design note has the measurements.
+  window per frame. While the popup is open it rebuilds that sheet on a throttle so the
+  tiles track their windows; §7 of the design note has the measurements and §Q5 the
+  renderer trap that made the rebuilds expensive until it was found.
 
   The sheet is transparent outside the tiles, so the window's own rounded plate shows
   around and between them. That is why the tile rectangles can stay square without the
@@ -309,14 +311,12 @@ begin
   end;
 
   // One readback for the whole grid, then the pixmap can go: the bytes are the sheet.
-  // Read straight into the bitmap's own buffer, allocating the bitmap ONCE per popup.
   //
-  // This is the fix for the refresh leak. A sheet is ~1.1MB, which is above glibc's
-  // mmap threshold, so allocating a fresh buffer with GetMem and freeing it each refresh
-  // maps and unmaps a region per refresh; the address space (and RSS) grows long before
-  // the allocator reuses it. Reading into a buffer that already exists keeps the memory
-  // in one place, and it also removes a full copy: CreateFromBGRA used to copy the whole
-  // sheet again.
+  // The bitmap is allocated once and reused; only the pixel data is rewritten. This is
+  // not what fixed the refresh leak -- that was the toolkit choosing EGL on a server with
+  // no DRI3 device, which made every repaint run through Mesa's software path. It is kept
+  // because it is simply better: it removes a 1.1MB allocation and a full-sheet copy from
+  // every refresh.
   FSheetPixelsSize := FLayout.Width * FLayout.Height * 4;
   if (FSheet = nil) or (FSheet.Width <> FLayout.Width) or
      (FSheet.Height <> FLayout.Height) then
@@ -442,8 +442,6 @@ begin
   if not PreviewRefreshDue(FRefresh, ANowMs) then Exit;
 
   BuildSheet(FStore);
-  // Force a full repaint rather than a dirty-rect one. The popup is small, so the cost
-  // difference is negligible, and it removes the partial-present path from the question.
   FArea.Invalidate();
   Result := True;
 end;
