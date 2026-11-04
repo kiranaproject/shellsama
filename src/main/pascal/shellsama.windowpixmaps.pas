@@ -43,6 +43,10 @@ type
     Width  : Integer;
     Height : Integer;
     Mapped : Boolean;
+    // The window's visual. The pixmap inherits it, and a picture created for the pixmap
+    // needs the format that matches this visual, not merely this depth: a server can
+    // offer several formats for one depth that differ in where the channels sit.
+    Visual : Cardinal;
   end;
   TWindowSnapshotArray = array of TWindowSnapshot;
 
@@ -51,6 +55,7 @@ type
     Pixmap   : xcb_pixmap_t;
     Width    : Integer;   // the pixmap's own bounds, recorded when it was named
     Height   : Integer;
+    Visual   : Cardinal;
     WasMapped: Boolean;   // map state at the previous refresh
   end;
   TWindowPixmapEntryArray = array of TWindowPixmapEntry;
@@ -93,6 +98,10 @@ type
     // window has no name, which means it has never been seen mapped.
     function Lookup(const AWindow: Cardinal; out APixmap: xcb_pixmap_t;
                     out AWidth, AHeight: Integer): Boolean;
+    // The same, plus the visual the pixmap was captured with.
+    function LookupFull(const AWindow: Cardinal; out APixmap: xcb_pixmap_t;
+                        out AWidth, AHeight: Integer;
+                        out AVisual: Cardinal): Boolean;
 
     function Count(): Integer;
     function Entries(): TWindowPixmapEntryArray;
@@ -231,6 +240,7 @@ begin
     Result[i].Width := 0;
     Result[i].Height := 0;
     Result[i].Mapped := False;
+    Result[i].Visual := 0;
 
     geom := xcb_get_geometry_reply(AConn, geomCookies[i], nil);
     if geom <> nil then
@@ -244,6 +254,7 @@ begin
     if attr <> nil then
     begin
       Result[i].Mapped := (attr^.map_state = XCB_MAP_STATE_VIEWABLE);
+      Result[i].Visual := attr^.visual;
       XcbFreeReply(attr);
     end;
   end;
@@ -318,6 +329,7 @@ begin
       FEntries[j].Pixmap := newPixmap;
       FEntries[j].Width := plan.Requests[i].Snapshot.Width;
       FEntries[j].Height := plan.Requests[i].Snapshot.Height;
+      FEntries[j].Visual := plan.Requests[i].Snapshot.Visual;
       FEntries[j].WasMapped := True;
     end
     else if newPixmap <> 0 then
@@ -328,6 +340,7 @@ begin
       FEntries[j].Pixmap := newPixmap;
       FEntries[j].Width := plan.Requests[i].Snapshot.Width;
       FEntries[j].Height := plan.Requests[i].Snapshot.Height;
+      FEntries[j].Visual := plan.Requests[i].Snapshot.Visual;
       FEntries[j].WasMapped := True;
     end;
   end;
@@ -360,6 +373,29 @@ begin
       APixmap := FEntries[i].Pixmap;
       AWidth := FEntries[i].Width;
       AHeight := FEntries[i].Height;
+      Exit(FEntries[i].Pixmap <> 0);
+    end;
+end;
+
+function TWindowPixmapStore.LookupFull(const AWindow: Cardinal;
+  out APixmap: xcb_pixmap_t; out AWidth, AHeight: Integer;
+  out AVisual: Cardinal): Boolean;
+var
+  i: Integer;
+begin
+  APixmap := 0;
+  AWidth := 0;
+  AHeight := 0;
+  AVisual := 0;
+  Result := False;
+
+  for i := 0 to High(FEntries) do
+    if FEntries[i].Window = AWindow then
+    begin
+      APixmap := FEntries[i].Pixmap;
+      AWidth := FEntries[i].Width;
+      AHeight := FEntries[i].Height;
+      AVisual := FEntries[i].Visual;
       Exit(FEntries[i].Pixmap <> 0);
     end;
 end;

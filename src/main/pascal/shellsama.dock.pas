@@ -31,7 +31,9 @@ uses
   ShellSama.Launcher,
   ShellSama.BottomPanel,
   ShellSama.DockApps,
-  ShellSama.WindowPixmaps;
+  ShellSama.WindowPixmaps,
+  ShellSama.PreviewPopup,
+  ShellSama.PreviewLayout;
 
 type
   TDockEntry = record
@@ -57,8 +59,10 @@ type
     FContentWidth   : Integer;
     FDockApps     : TShellDockApps;
     FEntries      : array of TDockEntry;
-    FWindowList   : TFtPopupMenu;
-    FWindowListKey: string;
+    // Replaces the old text list. See ShellSama.PreviewPopup and the design note.
+    FPreview      : TShellPreviewPopup;
+    FPreviewKey   : string;
+    FPreviewWins  : array of Cardinal;   // what the popup was opened with
     FIconKeys     : TStringList;
     FIconBitmaps  : TList;
     // One Composite pixmap per running window, held for the window's life. See
@@ -72,8 +76,12 @@ type
     function IndexOfKey(const AAppKey: string): Integer;
     procedure HandleEntryClick(Sender: TFtButton);
     procedure HandleEntryMenuPin(Sender: TFtMenuItem);
-    procedure HandleWindowListItem(Sender: TFtMenuItem);
-    procedure ShowWindowList(const AAppKey: string);
+    procedure HandlePreviewActivate(AWindow: Cardinal);
+    procedure ShowPreview(const AAppKey: string);
+    // Closes the popup if the app's window set no longer matches what it was opened
+    // with. An activation request for a window that has gone is at best a no-op and at
+    // worst raises an unrelated application, because X reuses ids.
+    procedure SyncPreview();
     procedure ActivateOrLaunch(const AAppKey: string);
     // Wheel over the dock: buttons 4 and 5 are vertical, 6 and 7 horizontal. The
     // toolkit forwards wheel events from child buttons up to the window, so this sees
@@ -204,6 +212,11 @@ begin
   begin
     FPixmaps.Free();
     FPixmaps := nil;
+  end;
+  if Assigned(FPreview) then
+  begin
+    FPreview.Free();
+    FPreview := nil;
   end;
   for i := 0 to FIconBitmaps.Count - 1 do
     TFtBitmap(FIconBitmaps[i]).Free();
@@ -761,7 +774,7 @@ begin
 
   // Several windows: let the user pick one. One window: just activate. None: launch.
   if Length(FEntries[idx].Windows) > 1 then
-    ShowWindowList(FEntries[idx].AppKey)
+    ShowPreview(FEntries[idx].AppKey)
   else
     ActivateOrLaunch(FEntries[idx].AppKey);
 end;
@@ -784,56 +797,115 @@ begin
   ActivateWindow(win);
 end;
 
-procedure TShellDock.ShowWindowList(const AAppKey: string);
+procedure TShellDock.ShowPreview(const AAppKey: string);
 var
-  idx, i, listH: Integer;
-  item: TFtMenuItem;
-  title: string;
+  idx, i: Integer;
+  wins: array of Cardinal;
+  titles: array of string;
+  centerX, iconTop, screenW: Integer;
+  rootVisual: Cardinal;
+  dockX, dockY: Integer;
 begin
   idx := IndexOfKey(AAppKey);
   if idx < 0 then Exit;
+  if Length(FEntries[idx].Windows) = 0 then Exit;
 
-  if Assigned(FWindowList) then
+  if FPreview = nil then
   begin
-    FWindowList.Free();
-    FWindowList := nil;
+    if FConn = nil then Exit;
+    rootVisual := 0;
+    if FScreen <> nil then
+      rootVisual := FScreen^.root_visual;
+    FPreview := TShellPreviewPopup.Create(FConn, FRootWindow, rootVisual, TopInset());
+    if FPreview = nil then Exit;
+    FPreview.OnActivate := @HandlePreviewActivate;
+    // Dismissal closes the popup by itself; the dock only needs to forget which app it
+    // belonged to, so the next click on the same icon reopens rather than toggles.
+    FPreview.OnDismiss := nil;
   end;
 
-  FWindowList := TFtPopupMenu.Create(FWindow);
-  if FWindowList = nil then Exit;
-  FWindowListKey := AAppKey;
-
-  for i := 0 to High(FEntries[idx].Windows) do
+  SetLength(wins, Length(FEntries[idx].Windows));
+  SetLength(titles, Length(FEntries[idx].Windows));
+  for i := 0 to High(wins) do
   begin
-    title := QueryWindowTitle(FEntries[idx].Windows[i]);
-    if title = '' then
-      title := FDockApps.AppNameForKey(AAppKey);
-    item := FWindowList.AddItem(title, @HandleWindowListItem);
-    if item <> nil then
-      item.Tag := Int64(FEntries[idx].Windows[i]);
+    wins[i] := FEntries[idx].Windows[i];
+    titles[i] := QueryWindowTitle(wins[i]);
+    if titles[i] = '' then
+      titles[i] := FDockApps.AppNameForKey(AAppKey);
   end;
 
-  // Anchor the list above the icon that opened it. Show() takes coordinates LOCAL to
-  // the dock window and converts them to screen itself, so the icon's button bounds are
-  // already the right coordinate space. Passing screen coordinates here put the list
-  // off at the bottom-right of the screen, because the dock's own position was then
-  // added a second time.
-  // Sit the list ABOVE the icon, not on top of it. The toolkit's item height is 28px
-  // and it lays out one row per entry, so the list's own height follows from the
-  // window count and can be subtracted here.
-  listH := FWindowList.ItemCount * 28;
+  FPreviewKey := AAppKey;
+  FPreviewWins := Copy(wins);
+
+  // Anchor to the icon's centre, not its left edge: the popup is centred on it.
+  //
+  // The button's bounds are LOCAL to the dock window, and the popup is a top-level
+  // window placed in screen coordinates. Passing the local values put the popup at the
+  // top-left of the screen, which is what happens when the dock's own position is left
+  // out of the arithmetic.
+  screenW := ScreenWidthHint();
+  dockX := 0;
+  dockY := 0;
+  if Assigned(FWindow) then
+    FWindow.GetPosition(dockX, dockY);
+
   if Assigned(FEntries[idx].Button) then
-    FWindowList.Show(FEntries[idx].Button.X,
-                     FEntries[idx].Button.Y - listH - 4)
+  begin
+    centerX := dockX + FEntries[idx].Button.X + (FEntries[idx].Button.Width div 2);
+    iconTop := dockY + FEntries[idx].Button.Y;
+  end
   else
-    FWindowList.Show(PanelWidth() div 2, 0);
+  begin
+    centerX := dockX + (PanelWidth() div 2);
+    iconTop := dockY;
+  end;
+
+  FPreview.Show(wins, titles, FPixmaps, centerX, iconTop, screenW);
 end;
 
-procedure TShellDock.HandleWindowListItem(Sender: TFtMenuItem);
+procedure TShellDock.SyncPreview();
+var
+  idx, i: Integer;
+  same: Boolean;
 begin
-  if (Sender = nil) or (Sender.Tag = 0) then Exit;
-  ActivateWindow(Cardinal(Sender.Tag));
+  if (FPreview = nil) or not FPreview.IsOpen() then Exit;
+
+  idx := IndexOfKey(FPreviewKey);
+  same := (idx >= 0) and (Length(FEntries[idx].Windows) = Length(FPreviewWins));
+  if same then
+    for i := 0 to High(FPreviewWins) do
+      if FEntries[idx].Windows[i] <> FPreviewWins[i] then
+      begin
+        same := False;
+        Break;
+      end;
+
+  if same then Exit;
+
+  // The list changed under it. Close rather than re-lay-out: the popup was anchored to
+  // an icon whose window count no longer matches, and rebuilding it mid-interaction
+  // would move the thing under the pointer.
+  FPreview.Close();
+  FPreviewKey := '';
+  FPreviewWins := nil;
 end;
+
+procedure TShellDock.HandlePreviewActivate(AWindow: Cardinal);
+var
+  idx, i: Integer;
+begin
+  // The popup was open when this window was listed, but it may have closed since. X
+  // reuses ids, so activating a stale one would raise an unrelated application.
+  idx := IndexOfKey(FPreviewKey);
+  if idx >= 0 then
+    for i := 0 to High(FEntries[idx].Windows) do
+      if FEntries[idx].Windows[i] = AWindow then
+      begin
+        ActivateWindow(AWindow);
+        Exit;
+      end;
+end;
+
 
 procedure TShellDock.HandleEntryMenuPin(Sender: TFtMenuItem);
 var
@@ -864,6 +936,7 @@ procedure TShellDock.Tick();
 begin
   inherited Tick();
   RefreshPixmaps();
+  SyncPreview();
 end;
 
 procedure TShellDock.RefreshPixmaps();

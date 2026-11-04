@@ -12,6 +12,7 @@ uses
   ShellSama.BottomPanel.Test,
   ShellSama.Dock.Test,
   ShellSama.WindowPixmaps.Test,
+  ShellSama.PreviewLayout.Test,
   ShellSama.DockApps.Test,
   ShellSama.Desktop.Test,
   ShellSama.Tray.Test,

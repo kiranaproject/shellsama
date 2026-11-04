@@ -36,6 +36,7 @@ type
     procedure TestDepartedWindowIsDropped();
     procedure TestResizeWhileMinimizedWaitsForTheRemap();
 
+    procedure TestStoreRecordsTheVisual();
     procedure TestStoreCapturesAndLooksUp();
     procedure TestStoreReplacesTheNameOnResize();
     procedure TestStoreKeepsTheNameAcrossAMinimize();
@@ -215,6 +216,30 @@ begin
 
   AssertEquals('no capture attempted while unmapped', 0, Length(plan.Requests));
   AssertEquals('and the last frame is kept', 0, Length(plan.Drops));
+end;
+
+procedure TWindowPixmapsTest.TestStoreRecordsTheVisual();
+var
+  store: TDebugWindowPixmapStore;
+  now: TWindowSnapshotArray;
+  pm: xcb_pixmap_t;
+  w, h: Integer;
+  vis: Cardinal;
+begin
+  // The visual is not bookkeeping: a picture created for the pixmap needs the format
+  // that matches it, or a 32-bit window's red and blue swap.
+  store := TDebugWindowPixmapStore.Create();
+  try
+    SetLength(now, 1);
+    now[0] := Snap(31, 800, 600);
+    now[0].Visual := $24;
+    store.Refresh(now);
+
+    AssertTrue('the window is present', store.LookupFull(31, pm, w, h, vis));
+    AssertEquals('the visual was recorded', Cardinal($24), vis);
+  finally
+    store.Free();
+  end;
 end;
 
 procedure TWindowPixmapsTest.TestStoreCapturesAndLooksUp();

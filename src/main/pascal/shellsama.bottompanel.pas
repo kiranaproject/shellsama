@@ -117,6 +117,10 @@ type
     // Window title, so a dock is identifiable in a window list.
     function WindowTitle(): string; virtual;
 
+    // How much screen the top panel reserves. Anything anchored above the dock must not
+    // slide under it.
+    function TopInset(): Integer;
+
 
   private
     procedure BuildTaskMenu(var ATask: TTaskItem);
@@ -469,6 +473,14 @@ begin
   FAtomWMChangeState         := InternAtom(FConn, 'WM_CHANGE_STATE');
   FAtomWMName                := InternAtom(FConn, 'WM_NAME');
   FAtomWMClass               := InternAtom(FConn, 'WM_CLASS');
+end;
+
+function TShellTaskSurface.TopInset(): Integer;
+begin
+  if Assigned(GTopPanelInstance) then
+    Result := GTopPanelInstance.PanelHeight()
+  else
+    Result := 0;
 end;
 
 function TShellTaskSurface.WindowTitle(): string;

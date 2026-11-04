@@ -525,6 +525,44 @@ Two more things measured while testing:
 
 `xcb_composite_name_window_pixmap` was already bound, in `floria.xcb.composite.pas`.
 
+### 7.7 The Popup, as Built
+
+`shellsama/src/main/pascal/shellsama.previewpopup.pas`. Two widgets, as planned: a
+`TFtWindow` with a CSS plate and a `TFtDrawingArea` inside it.
+
+Four things did not survive contact with the implementation, and all four were silent
+failures rather than errors. They are recorded because each one looks like "the popup is
+empty" from the outside.
+
+**A picture format must match its drawable's depth, not the root window's.** The sheet is
+a depth-32 pixmap so it can be transparent outside the tiles, but the first version
+created its picture with the root visual's format, which is depth 24. Render rejects the
+mismatch, and because X errors are asynchronous the composite simply drew nothing: no
+exception, no return code, just an empty sheet. The sheet now asks for the format of its
+own depth.
+
+**A `TFloriaImage` from this program is not a `TFloriaImage` to libft.** `ft_canvas_draw_image`
+guards its argument with `TObject(ABitmap) is TFloriaImage`, and shellsama and libft each
+link their own copy of `Floria.Image.Core`, so an image built in the dock fails that test
+and the draw call returns silently. The sheet is handed over as raw BGRA through
+`ft_bitmap_create_from_bgra` instead, which is the toolkit's own entry point and has no
+class identity to get wrong.
+
+**Render output is premultiplied and ftpas has no way to say so.** Every bitmap ftpas
+builds is treated as straight alpha, so a half-transparent window would draw twice as
+dark. The sheet is demultiplied before it is handed over; opaque and fully transparent
+pixels are unchanged, so the common case is one comparison per pixel.
+
+**The anchor needs screen coordinates, and the button's bounds are dock-local.** Passing
+`FEntries[idx].Button.X/Y` straight to `SetPosition` put the popup at the top-left of the
+screen. `FWindow.GetPosition` supplies the dock's own origin.
+
+There is also a build trap that cost more time than any of the above:
+`shellsama/target/libft.so` is what the binary loads (`RUNPATH` is `$ORIGIN`), and it is
+**not** refreshed by `pasbuild`. Every toolkit change was being tested against a copy from
+two days earlier, so a correct fix looked broken. `build.sh` now copies it when it
+differs, which makes the build and the runtime unable to disagree.
+
 ---
 
 ## 8. Open Questions
@@ -656,6 +694,33 @@ Verified live under Xephyr with a real `xterm`, reading the store's own state at
 | resized to 700x500 | `0x60002D` | 700x500 |
 | window closed | none held | — |
 
+### A3. Popup geometry — `☑` done
+
+`shellsama/src/test/pascal/shellsama.previewlayout.test.pas`, 10 tests over the pure
+arithmetic: the published sizes for 1–12 windows, reading-order placement, hit-testing
+that covers the caption as well as the tile and rejects the gaps, the tall rule widening
+only as far as it needs to, the wide rule, and the anchor staying on screen and below the
+top inset.
+
+Sabotage-verified: removing the tall rule, removing the wide rule, making the caption
+untargetable, and removing the screen clamp each fail a named test.
+
+### A3b. The popup itself — `☑` done
+
+Verified live under Xephyr with three xterms of the same class, with XTEST driving real
+pointer and keyboard input:
+
+| Check | Result |
+| :--- | :--- |
+| popup appears, 668x163 for three windows | ok |
+| sits above the dock, inside the screen | ok |
+| each tile has real composited content (72 distinct colours) | ok |
+| hovering a tile draws a highlight | ok |
+| the highlight clears when the pointer leaves | ok |
+| clicking a tile closes the popup and activates that window | ok |
+| clicking elsewhere in the dock closes it (the Q3 grab) | ok |
+| Escape closes it | ok |
+
 ### A3. Popup geometry
 
 Unit tests in `shellsama.dock.test.pas`, on the arithmetic only:
@@ -683,7 +748,7 @@ closes the popup; the popup never survives its owning application's last window.
 | 1 | Answer Q1 with A1 | `☑` measured, see §7.5 |
 | 2 | Bind the render calls in `florialib`; add and test the scale helper (A2) | `☑` see §7.6 |
 | 3 | Pixmap lifetime: hold per window, re-capture on resize or re-map, free on departure | `☑` see §7.2 |
-| 4 | Popup geometry, plate, sheet, paint, click-to-activate (A3, A4) | `☐` |
+| 4 | Popup geometry, plate, sheet, paint, click-to-activate (A3, A4) | `☑` see §7.7 |
 | 5 | Dismissal, per Q3 (A5) | `☐` |
 | 6 | Per-tile right-click menu, reusing the task menu items | `☐` |
 | 7 | Live refresh, only if wanted (Q5) | `☐` |
