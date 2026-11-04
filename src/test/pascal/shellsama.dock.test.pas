@@ -28,6 +28,8 @@ type
     procedure TestDockTickIsSafe();
     procedure TestResizeKeepsTheSameWindow();
     procedure TestPinnedAppsAppearWithNothingRunning();
+    procedure TestTileMenuOffersTheWindowActions();
+    procedure TestTileMenuCaptionFollowsTheWindowState();
     procedure TestTickDoesNotAccumulatePixmaps();
     procedure TestWideDockScrollsInsteadOfShrinking();
     procedure TestScrollingIsClampedAtBothEnds();
@@ -249,6 +251,78 @@ begin
     end
     else if FileExists(cfgPath) then
       DeleteFile(cfgPath);
+  end;
+end;
+
+procedure TDockTest.TestTileMenuOffersTheWindowActions();
+var
+  menu: TFtPopupMenu;
+  i: Integer;
+  captions: TStringList;
+  item: TFtMenuItem;
+begin
+  // The tile menu is the task list's menu, so a preview and a task button offer the same
+  // actions. Asserting the captions rather than the count catches a missing or renamed
+  // action, which is the failure a user would notice.
+  menu := TFtPopupMenu.Create(FDock.WindowWidget);
+  AssertNotNull('menu created', menu);
+  captions := TStringList.Create();
+  try
+    FDock.DebugBuildTileMenu(1234, menu);
+    for i := 0 to menu.ItemCount - 1 do
+    begin
+      item := menu.Items[i];
+      // ftpas does not expose IsSeparator. A separator shows up as an item with no
+      // handle and no caption, so filter on the handle as well as the caption.
+      // A separator comes back from ftpas with the caption '-'. Check it explicitly
+      // rather than skipping anything that is not one of the three actions, so a
+      // fourth real action would fail the count instead of being filtered away.
+      if (item = nil) or (item.Caption = '') then Continue;
+      if item.Caption = '-' then
+      begin
+        captions.Add('<separator>');
+        Continue;
+      end;
+      captions.Add(item.Caption);
+    end;
+
+    // Minimize, Maximize, separator, Close: the same shape the task list menu has.
+    AssertEquals('four rows: ' + captions.CommaText, 4, captions.Count);
+    AssertEquals('first is minimize', 'Minimize', captions[0]);
+    AssertEquals('second is maximize', 'Maximize', captions[1]);
+    AssertEquals('then a separator', '<separator>', captions[2]);
+    AssertEquals('last is close', 'Close', captions[3]);
+  finally
+    captions.Free();
+    menu.Free();
+  end;
+end;
+
+procedure TDockTest.TestTileMenuCaptionFollowsTheWindowState();
+var
+  menu: TFtPopupMenu;
+  item: TFtMenuItem;
+begin
+  // Window 1234 does not exist, so neither minimized nor maximized applies and both
+  // captions must stay in their default form. This is the negative case; the positive
+  // case needs a real minimized window and is covered live.
+  menu := TFtPopupMenu.Create(FDock.WindowWidget);
+  AssertNotNull('menu created', menu);
+  try
+    FDock.DebugBuildTileMenu(1234, menu);
+    item := nil;
+    if menu.ItemCount > 0 then
+      item := menu.Items[0];
+    AssertNotNull('a first item exists', item);
+    AssertEquals('a window that does not exist is not called minimized',
+                 'Minimize', item.Caption);
+
+    // A zero window must not build anything at all.
+    menu.Clear();
+    FDock.DebugBuildTileMenu(0, menu);
+    AssertEquals('no actions for window 0', 0, menu.ItemCount);
+  finally
+    menu.Free();
   end;
 end;
 

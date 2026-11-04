@@ -77,6 +77,9 @@ type
     procedure HandleEntryClick(Sender: TFtButton);
     procedure HandleEntryMenuPin(Sender: TFtMenuItem);
     procedure HandlePreviewActivate(AWindow: Cardinal);
+    // Fills the preview tile's context menu with the same window actions the task list
+    // offers, so there is one implementation of "minimize, maximize, close".
+    procedure BuildPreviewTileMenu(AWindow: Cardinal; AParent: TFtWidget);
     procedure ShowPreview(const AAppKey: string);
     // Closes the popup if the app's window set no longer matches what it was opened
     // with. An activation request for a window that has gone is at best a no-op and at
@@ -95,6 +98,9 @@ type
     // Cached per app key because the dock draws one icon per app, not per window.
     function IconForApp(const AAppKey: string; APreferredSize: Integer): TFtBitmap;
   protected
+    // Any window action chosen from a preview tile ends that interaction: the popup was
+    // there to pick a window, and acting on one is the answer.
+    procedure WindowActionPerformed(AWin: Cardinal); override;
     function WindowTitle(): string; override;
     procedure SetupWindow(); override;
     procedure LayoutButtons(); override;
@@ -127,6 +133,12 @@ type
     function EntryRunning(AIndex: Integer): Boolean;
     // How many windows currently have a held pixmap. Test use only.
     function PixmapCount(): Integer;
+    // Opens the preview for the app whose key is AAppKey, as a click would. Test use
+    // only: without it the popup can only be reached through real pointer input.
+    procedure DebugShowPreview(const AAppKey: string);
+    // Fills AMenu as a right-click on AWindow's tile would, with AWindow's current
+    // state. Test use only: the real path goes through the popup's mouse handling.
+    procedure DebugBuildTileMenu(AWindow: Cardinal; AMenu: TFtPopupMenu);
     function EntryFocused(AIndex: Integer): Boolean;
     function EntryPinned(AIndex: Integer): Boolean;
     function EntryWindowCountAt(AIndex: Integer): Integer;
@@ -819,6 +831,7 @@ begin
     FPreview := TShellPreviewPopup.Create(FConn, FRootWindow, rootVisual, TopInset());
     if FPreview = nil then Exit;
     FPreview.OnActivate := @HandlePreviewActivate;
+    FPreview.OnBuildTileMenu := @BuildPreviewTileMenu;
     // Dismissal closes the popup by itself; the dock only needs to forget which app it
     // belonged to, so the next click on the same icon reopens rather than toggles.
     FPreview.OnDismiss := nil;
@@ -888,6 +901,39 @@ begin
   FPreview.Close();
   FPreviewKey := '';
   FPreviewWins := nil;
+end;
+
+procedure TShellDock.WindowActionPerformed(AWin: Cardinal);
+begin
+  inherited WindowActionPerformed(AWin);
+  if Assigned(FPreview) and FPreview.IsOpen() then
+  begin
+    FPreview.Close();
+    FPreviewKey := '';
+    FPreviewWins := nil;
+  end;
+end;
+
+procedure TShellDock.BuildPreviewTileMenu(AWindow: Cardinal; AParent: TFtWidget);
+var
+  menu: TFtPopupMenu;
+  item: TFtMenuItem;
+begin
+  if (AWindow = 0) or not (AParent is TFtPopupMenu) then Exit;
+  menu := TFtPopupMenu(AParent);
+
+  AddWindowActions(menu, AWindow);
+
+  // Captions follow the window's state, the way the task list does it, so the user is
+  // never offered "Minimize" for a window that is already minimized. Re-read here rather
+  // than trusting a cached flag: the menu is built at the moment of the right-click.
+  item := FindWindowAction(menu, 'Minimize');
+  if (item <> nil) and IsWindowMinimized(AWindow) then
+    item.Caption := 'Restore';
+
+  item := FindWindowAction(menu, 'Maximize');
+  if (item <> nil) and IsWindowMaximized(AWindow) then
+    item.Caption := 'Restore';
 end;
 
 procedure TShellDock.HandlePreviewActivate(AWindow: Cardinal);
@@ -973,6 +1019,16 @@ begin
 
   snapshots := QueryWindowSnapshots(FConn, wins);
   FPixmaps.Refresh(snapshots);
+end;
+
+procedure TShellDock.DebugBuildTileMenu(AWindow: Cardinal; AMenu: TFtPopupMenu);
+begin
+  BuildPreviewTileMenu(AWindow, AMenu);
+end;
+
+procedure TShellDock.DebugShowPreview(const AAppKey: string);
+begin
+  ShowPreview(AAppKey);
 end;
 
 function TShellDock.PixmapCount(): Integer;

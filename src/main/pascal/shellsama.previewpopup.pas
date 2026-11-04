@@ -39,6 +39,8 @@ uses
 type
   TPreviewActivateEvent = procedure(AWindow: Cardinal) of object;
   TPreviewDismissEvent  = procedure() of object;
+  // Fills AParent with the actions for AWindow, tagged by the caller's convention.
+  TPreviewBuildTileMenu = procedure(AWindow: Cardinal; AParent: TFtWidget) of object;
 
 const
   PREVIEW_PLATE_CSS =
@@ -80,15 +82,22 @@ type
     FLayout   : TPreviewLayout;
     FHover    : Integer;
     FOpen     : Boolean;
+    FTileMenu : TFtPopupMenu;
 
     FOnActivate: TPreviewActivateEvent;
     FOnDismiss : TPreviewDismissEvent;
+    // Builds the per-window menu for a tile. Supplied by the dock so the tile offers the
+    // same actions as the task list, from one implementation.
+    FOnBuildTileMenu: TPreviewBuildTileMenu;
 
     procedure HandlePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
     procedure HandleMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer);
     procedure HandleMouseMove(Sender: TFtDrawingArea; X, Y: Integer);
     procedure HandleMouseLeave(Sender: TFtDrawingArea; X, Y: Integer);
     procedure HandleDismiss(Sender: TFtWindow);
+    // Right-click on a tile: build the menu for that window and pop it up at the pointer.
+    procedure HandleTileMenu(AIndex, AButton, AX, AY: Integer);
+    procedure ReleaseTileMenu();
 
     // Composites every tile into one sheet and reads it back. Replaces any previous
     // sheet, so a failure leaves the popup with no thumbnails rather than stale ones.
@@ -114,6 +123,9 @@ type
     procedure Release();
 
     function IsOpen(): Boolean;
+    // True while a tile menu is open. The dock must not close the popup while that is
+    // true: it would take the menu down with it.
+
     function WindowCount(): Integer;
     function Layout(): TPreviewLayout;
     function Hover(): Integer;
@@ -123,6 +135,7 @@ type
 
     property OnActivate: TPreviewActivateEvent read FOnActivate write FOnActivate;
     property OnDismiss: TPreviewDismissEvent read FOnDismiss write FOnDismiss;
+    property OnBuildTileMenu: TPreviewBuildTileMenu read FOnBuildTileMenu write FOnBuildTileMenu;
   end;
 
 implementation
@@ -137,6 +150,7 @@ begin
   FTopInset := ATopInset;
   FHover := -1;
   FOpen := False;
+  FTileMenu := nil;
   FWindow := nil;
   FArea := nil;
   FSheet := nil;
@@ -168,8 +182,19 @@ begin
   end;
 end;
 
+procedure TShellPreviewPopup.ReleaseTileMenu();
+begin
+  if Assigned(FTileMenu) then
+  begin
+    FTileMenu.Close();
+    FTileMenu.Free();
+    FTileMenu := nil;
+  end;
+end;
+
 procedure TShellPreviewPopup.ReleaseWindow();
 begin
+  ReleaseTileMenu();
   if Assigned(FArea) then
   begin
     FArea.Free();
@@ -402,16 +427,30 @@ procedure TShellPreviewPopup.HandleMouseDown(Sender: TFtDrawingArea;
 var
   idx: Integer;
 begin
-  if Button <> 1 then Exit;
+  if Button <> 1 then
+  begin
+    // Right-click still has to land on a tile, but the early return above would have
+    // swallowed it. Fall through to the same hit test.
+    idx := PreviewHitTest(FLayout, X, Y);
+    if (idx >= 0) and (idx <= High(FWindows)) then
+      HandleTileMenu(idx, Button, X, Y);
+    Exit;
+  end;
 
   idx := PreviewHitTest(FLayout, X, Y);
   if (idx < 0) or (idx > High(FWindows)) then Exit;
 
-  // Hide before activating. Activation raises another window, and leaving this one
-  // mapped on top of it would look like the click did nothing.
-  Close();
-  if Assigned(FOnActivate) then
-    FOnActivate(FWindows[idx]);
+  case Button of
+    1:
+    begin
+      // Hide before activating. Activation raises another window, and leaving this one
+      // mapped on top of it would look like the click did nothing.
+      Close();
+      if Assigned(FOnActivate) then
+        FOnActivate(FWindows[idx]);
+    end;
+    3: HandleTileMenu(idx, Button, X, Y);
+  end;
 end;
 
 procedure TShellPreviewPopup.HandleMouseMove(Sender: TFtDrawingArea; X, Y: Integer);
@@ -432,6 +471,43 @@ begin
   FHover := -1;
   if Assigned(FArea) then
     FArea.Invalidate();
+end;
+
+procedure TShellPreviewPopup.HandleTileMenu(AIndex, AButton, AX, AY: Integer);
+begin
+  if (AButton <> 3) or not Assigned(FOnBuildTileMenu) or not Assigned(FWindow) then Exit;
+  if (AIndex < 0) or (AIndex > High(FWindows)) then Exit;
+
+  // One menu, reused. A shown menu is the toolkit's grabbed popup until it closes, so
+  // freeing it right after Show would leave the grab pointing at freed memory. Keeping
+  // one also avoids a new menu object per right-click.
+  if not Assigned(FTileMenu) then
+  begin
+    FTileMenu := TFtPopupMenu.Create(FWindow);
+    if FTileMenu = nil then Exit;
+  end
+  else
+    FTileMenu.Clear();
+
+  // The dock fills it, so the tile offers exactly the task list's actions.
+  //
+  // The items are NOT re-wired here to close the popup: ftpas gives an item one click
+  // callback, so doing that would silently replace the action with a dismissal and the
+  // menu would do nothing. The popup closes from the tick instead, which sees the
+  // window set change and is already the mechanism for that.
+  FOnBuildTileMenu(FWindows[AIndex], FTileMenu);
+
+  // Hand the grab to the menu: two owners cannot share it, and the menu is what the user
+  // is now interacting with. The popup's own dismissal is not lost, because the dock's
+  // tick closes it as soon as the window set changes — which is exactly what any of these
+  // actions causes.
+  if Assigned(FWindow) then
+    FWindow.UngrabInput();
+
+  // The drawing area fills the popup, so its coordinates are already window-local, and
+  // ft_popup_menu_show converts window-local to screen itself. Passing screen
+  // coordinates here would add the popup's origin a second time.
+  FTileMenu.Show(AX, AY);
 end;
 
 procedure TShellPreviewPopup.HandleDismiss(Sender: TFtWindow);

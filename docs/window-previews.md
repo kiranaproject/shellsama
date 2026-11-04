@@ -563,6 +563,47 @@ There is also a build trap that cost more time than any of the above:
 two days earlier, so a correct fix looked broken. `build.sh` now copies it when it
 differs, which makes the build and the runtime unable to disagree.
 
+### 7.8 The Per-Tile Menu
+
+Right-clicking a tile offers the same three actions as the task list: Minimize, Maximize,
+Close, with a separator. Rather than duplicating them, `AddWindowActions` was extracted
+from `BuildTaskMenu` and both call it, so there is one implementation of "what can be done
+to a window".
+
+Captions follow the window's state, the same way the task list does it: a minimized
+window's tile offers **Restore** where a running one offers **Minimize**. This is done by
+caption rather than by `Enabled` for the reason the task list already documents — the
+toolkit paints enabled and disabled items identically, so a disabled item looks clickable
+and silently does nothing.
+
+Items are found by caption, not by index. An index would still be correct today and would
+silently target the wrong action the first time the menu grows a row.
+
+**Three things this cost, each worth recording:**
+
+Two grabs cannot coexist. Showing the menu while the popup held the popup grab meant the
+menu's own item clicks were reported to the popup instead, so the menu appeared and then
+did nothing. The popup now releases the grab before showing the menu.
+
+**Every action is responsible for closing the popup, and nothing else notices.** The tick
+alone cannot do it: minimizing a window does not change `_NET_CLIENT_LIST`, so
+`TaskSetSignature` is unchanged and `SyncPreview` has nothing to react to. The popup would
+have sat there until the next click. There is no menu-close notification in the toolkit
+either, so a flag set on open could never be cleared. The fix is a hook:
+`TShellTaskSurface.WindowActionPerformed`, called after each action runs, which the dock
+overrides to close the popup.
+
+**The obvious hook is the wrong one.** Re-wiring each menu item's `OnClick` to also close
+the popup looked natural, but ftpas gives an item a single click callback, so that would
+have replaced the action itself with the dismissal — a menu that closes and does nothing.
+The dock's own menu tests would not have caught it; only running a real menu and watching
+a window minimize did.
+
+Verified live: right-clicking a tile opens the menu at the pointer with the three actions;
+choosing Minimize closes the menu, minimizes the window (two viewable xterms become one),
+and closes the popup; and a minimized window's tile reads **Restore** while a running one
+reads **Minimize**.
+
 ---
 
 ## 8. Open Questions

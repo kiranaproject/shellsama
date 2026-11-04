@@ -124,10 +124,24 @@ type
 
   private
     procedure BuildTaskMenu(var ATask: TTaskItem);
-    procedure UpdateTaskMenuState(var ATask: TTaskItem);
     procedure HandleTaskMenuMinimize(Sender: TFtMenuItem);
     procedure HandleTaskMenuMaximize(Sender: TFtMenuItem);
     procedure HandleTaskMenuClose(Sender: TFtMenuItem);
+  protected
+    // Refreshes a window menu's captions from the window's current state. Captions
+    // rather than Enabled, because the toolkit paints enabled and disabled items
+    // identically, so a disabled item looks clickable and then does nothing.
+    procedure UpdateTaskMenuState(var ATask: TTaskItem);
+    // Adds the three window actions to AMenu, each tagged with AWin so one handler shape
+    // serves every window. Shared with the dock's preview tiles, which offer the same
+    // actions for the same reasons.
+    procedure AddWindowActions(AMenu: TFtPopupMenu; AWin: Cardinal);
+    // Locates one of the actions AddWindowActions added, by caption.
+    function FindWindowAction(AMenu: TFtPopupMenu; const ACaption: string): TFtMenuItem;
+    // Called after one of the window actions has run. A subclass that presents those
+    // actions somewhere transient -- the dock's preview popup -- closes that surface
+    // here. Minimizing does not change the client list, so nothing else would notice.
+    procedure WindowActionPerformed(AWin: Cardinal); virtual;
   public
     // Resize and reposition without destroying the window. Recreating it would drop
     // its strut and make every maximized client flash until the new one mapped.
@@ -366,21 +380,63 @@ begin
   ATask.Menu := TFtPopupMenu.Create(FWindow);
   if ATask.Menu = nil then Exit;
 
-  ATask.MenuMinimize := ATask.Menu.AddItem('Minimize', @HandleTaskMenuMinimize);
-  ATask.MenuMaximize := ATask.Menu.AddItem('Maximize', @HandleTaskMenuMaximize);
-  ATask.Menu.AddSeparator();
-  ATask.MenuClose := ATask.Menu.AddItem('Close', @HandleTaskMenuClose);
+  AddWindowActions(ATask.Menu, ATask.Window);
+  // Captured by caption: UpdateTaskMenuState renames these to "Restore" later, and
+  // looking them up again after that would fail.
+  ATask.MenuMinimize := FindWindowAction(ATask.Menu, 'Minimize');
+  ATask.MenuMaximize := FindWindowAction(ATask.Menu, 'Maximize');
+  ATask.MenuClose := FindWindowAction(ATask.Menu, 'Close');
+  // Looked up by caption, not index. An index would silently point at the wrong item if
+  // AddWindowActions ever grows a row, and the failure would be a menu that renames or
+  // closes the wrong thing.
 
-  // Every item carries the window id, so one handler shape serves all tasks and
-  // the callbacks need no shared mutable state.
-  it := ATask.MenuMinimize;
-  if it <> nil then it.Tag := Int64(ATask.Window);
-  it := ATask.MenuMaximize;
-  if it <> nil then it.Tag := Int64(ATask.Window);
-  it := ATask.MenuClose;
-  if it <> nil then it.Tag := Int64(ATask.Window);
+
+
 
   UpdateTaskMenuState(ATask);
+end;
+
+function TShellTaskSurface.FindWindowAction(AMenu: TFtPopupMenu;
+  const ACaption: string): TFtMenuItem;
+var
+  i: Integer;
+  it: TFtMenuItem;
+begin
+  Result := nil;
+  if AMenu = nil then Exit;
+
+  // By caption rather than by index: an index would silently point at the wrong action
+  // if AddWindowActions ever grows a row, and that failure renames or closes the wrong
+  // window rather than crashing.
+  for i := 0 to AMenu.ItemCount - 1 do
+  begin
+    it := AMenu.Items[i];
+    if (it <> nil) and SameText(it.Caption, ACaption) then
+      Exit(it);
+  end;
+end;
+
+procedure TShellTaskSurface.WindowActionPerformed(AWin: Cardinal);
+begin
+  // Nothing to do by default: the task list stays up after an action.
+end;
+
+procedure TShellTaskSurface.AddWindowActions(AMenu: TFtPopupMenu; AWin: Cardinal);
+var
+  it: TFtMenuItem;
+begin
+  if (AMenu = nil) or (AWin = 0) then Exit;
+
+  it := AMenu.AddItem('Minimize', @HandleTaskMenuMinimize);
+  if it <> nil then it.Tag := Int64(AWin);
+
+  it := AMenu.AddItem('Maximize', @HandleTaskMenuMaximize);
+  if it <> nil then it.Tag := Int64(AWin);
+
+  AMenu.AddSeparator();
+
+  it := AMenu.AddItem('Close', @HandleTaskMenuClose);
+  if it <> nil then it.Tag := Int64(AWin);
 end;
 
 procedure TShellTaskSurface.UpdateTaskMenuState(var ATask: TTaskItem);
@@ -425,6 +481,8 @@ begin
   end
   else
     MinimizeWindow(win);
+
+  WindowActionPerformed(win);
 end;
 
 procedure TShellTaskSurface.HandleTaskMenuMaximize(Sender: TFtMenuItem);
@@ -439,12 +497,18 @@ begin
     RestoreWindow(win)
   else
     MaximizeWindow(win);
+
+  WindowActionPerformed(win);
 end;
 
 procedure TShellTaskSurface.HandleTaskMenuClose(Sender: TFtMenuItem);
+var
+  win: Cardinal;
 begin
-  if Assigned(Sender) then
-    CloseWindow(Cardinal(Sender.Tag));
+  if not Assigned(Sender) then Exit;
+  win := Cardinal(Sender.Tag);
+  CloseWindow(win);
+  WindowActionPerformed(win);
 end;
 
 procedure TShellTaskSurface.InitAtoms();
