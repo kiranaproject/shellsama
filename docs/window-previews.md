@@ -344,7 +344,8 @@ time the popup opened. Measurement (§7.5) ruled that out: naming a pixmap for a
 popup-open time. The pixels do survive a minimize, but only in a pixmap that was named
 while the window was still mapped.
 
-The dock therefore keeps **one named pixmap per window**, for as long as the window lives:
+The dock therefore keeps **one named pixmap per window**, for as long as the window lives.
+Implemented in `ShellSama.WindowPixmaps`:
 
 | Event | Action | Why |
 | :--- | :--- | :--- |
@@ -359,9 +360,21 @@ Holding a name costs no extra server memory. Per the Composite specification,
 storage rather than copying it. The live-view result in §7.5 is consistent with that: a
 copy would have been a snapshot.
 
-Selecting `StructureNotify` on each client window is how the dock learns of these events.
-It is a plain event mask, not one of the redirect masks, so a non-owning client may select
-it.
+**How the dock learns about those events: polling, not `StructureNotify`.** The toolkit's
+event loop resolves an event's window against the windows it owns and drops anything else,
+so a foreign window's `ConfigureNotify` would never reach the dock. `ft_register_event_filter`
+would work around that, but it is a global hook that sees every event for the whole
+application, and the dock would have to filter it.
+
+Instead the dock polls on the panel timer it already runs: `QueryWindowSnapshots` batches
+one geometry request and one attributes request per window, then reads all the replies, so
+the whole window set costs two round trips per tick rather than two per window. At 250ms
+with a handful of windows that is cheaper and far simpler than an event hook.
+
+The cost of polling is latency, not correctness: a resize is noticed up to 250ms late, and
+a window that is minimized and restored between two ticks is not noticed at all. That
+second case is harmless — the name is still valid, it is just a frame older than it could
+be — and the next tick that sees the window mapped again re-captures anyway.
 
 ### 7.3 Sequence, Once Per Popup Open
 
@@ -612,6 +625,37 @@ real X server:
 Sabotage-verified: dropping the transform fails the scaling test, and changing the
 default operator to `SRC` fails the operator test.
 
+### A2b. Pixmap lifetime — `☑` done
+
+`shellsama/src/test/pascal/shellsama.windowpixmaps.test.pas`, 14 tests. The lifetime rules
+are a pure function over two arrays (`PlanPixmapRefresh`), and the store's bookkeeping runs
+against a test double that never contacts the server, so the assertions describe behaviour
+rather than X calls:
+
+- a new mapped window is captured; a new unmapped one is not (the server refuses);
+- a resize re-captures, and the old name is **freed**, not just replaced;
+- a re-map re-captures even at the same size, because a restore gives the window new
+  storage;
+- a minimize keeps the name and frees nothing;
+- an unchanged window is not re-captured, so a steady dock does not take a new name four
+  times a second;
+- a departed window's name is freed;
+- a refused capture leaves no entry, rather than an entry pointing at pixmap 0.
+
+Sabotage-verified, one rule at a time: dropping the re-map rule, capturing an unmapped
+window, never noticing a resize, never dropping a departed window, and leaking the old
+name on re-capture each fail a named test.
+
+Verified live under Xephyr with a real `xterm`, reading the store's own state at each step:
+
+| Step | Held name | Recorded size |
+| :--- | :--- | :--- |
+| window mapped | `0x60002B` | 364x264 |
+| minimized | `0x60002B` (unchanged) | 364x264 |
+| restored | `0x60002C` (re-captured) | 364x264 |
+| resized to 700x500 | `0x60002D` | 700x500 |
+| window closed | none held | — |
+
 ### A3. Popup geometry
 
 Unit tests in `shellsama.dock.test.pas`, on the arithmetic only:
@@ -638,7 +682,7 @@ closes the popup; the popup never survives its owning application's last window.
 | :--- | :--- | :--- |
 | 1 | Answer Q1 with A1 | `☑` measured, see §7.5 |
 | 2 | Bind the render calls in `florialib`; add and test the scale helper (A2) | `☑` see §7.6 |
-| 3 | Pixmap lifetime: hold per window, re-name on `MapNotify`/`ConfigureNotify`, free on `DestroyNotify` | `☐` |
+| 3 | Pixmap lifetime: hold per window, re-capture on resize or re-map, free on departure | `☑` see §7.2 |
 | 4 | Popup geometry, plate, sheet, paint, click-to-activate (A3, A4) | `☐` |
 | 5 | Dismissal, per Q3 (A5) | `☐` |
 | 6 | Per-tile right-click menu, reusing the task menu items | `☐` |

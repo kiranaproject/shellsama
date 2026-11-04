@@ -28,6 +28,7 @@ type
     procedure TestDockTickIsSafe();
     procedure TestResizeKeepsTheSameWindow();
     procedure TestPinnedAppsAppearWithNothingRunning();
+    procedure TestTickDoesNotAccumulatePixmaps();
     procedure TestWideDockScrollsInsteadOfShrinking();
     procedure TestScrollingIsClampedAtBothEnds();
   end;
@@ -249,6 +250,24 @@ begin
     else if FileExists(cfgPath) then
       DeleteFile(cfgPath);
   end;
+end;
+
+procedure TDockTest.TestTickDoesNotAccumulatePixmaps();
+var
+  first, second: Integer;
+begin
+  // The dock takes a pixmap name per running window, on the panel timer. The absolute
+  // count depends on what is running on the display the suite is pointed at, so the
+  // property worth asserting is stability: a steady window set must not add a name on
+  // every tick, which is what a leak or a re-capture-every-tick bug would look like.
+  FDock.Tick();
+  first := FDock.PixmapCount();
+
+  FDock.Tick();
+  FDock.Tick();
+  second := FDock.PixmapCount();
+
+  AssertEquals('repeated ticks do not accumulate names', first, second);
 end;
 
 // Past the width cap the row scrolls rather than shrinking. Shrinking was tried first

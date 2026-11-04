@@ -30,7 +30,8 @@ uses
   ShellSama.DesktopApps,
   ShellSama.Launcher,
   ShellSama.BottomPanel,
-  ShellSama.DockApps;
+  ShellSama.DockApps,
+  ShellSama.WindowPixmaps;
 
 type
   TDockEntry = record
@@ -60,6 +61,10 @@ type
     FWindowListKey: string;
     FIconKeys     : TStringList;
     FIconBitmaps  : TList;
+    // One Composite pixmap per running window, held for the window's life. See
+    // ShellSama.WindowPixmaps for why the name has to be held rather than taken when a
+    // preview is opened.
+    FPixmaps      : TWindowPixmapStore;
 
     procedure BuildEntries();
     procedure FreeEntries();
@@ -74,6 +79,10 @@ type
     // toolkit forwards wheel events from child buttons up to the window, so this sees
     // them wherever the pointer is over an icon.
     procedure HandleDockMouseDown(Sender: TFtWindow; AX, AY, AButton: Integer);
+    // Brings the per-window pixmaps in line with the running windows. Runs on the panel
+    // timer, because the toolkit's event loop drops events for windows it does not own,
+    // so the dock cannot subscribe to their ConfigureNotify.
+    procedure RefreshPixmaps();
     // Icon for an application: the desktop entry's icon, else the first window's.
     // Cached per app key because the dock draws one icon per app, not per window.
     function IconForApp(const AAppKey: string; APreferredSize: Integer): TFtBitmap;
@@ -93,6 +102,7 @@ type
     function PanelY(): Integer; override;
 
     procedure RefreshDock();
+    procedure Tick(); override;
 
     function EntryCount(): Integer;
     // Adds APinnedCount placeholder entries and lays out, so the fit arithmetic can be
@@ -107,6 +117,8 @@ type
     function LayoutIconX(): Integer;
     function EntryAppKey(AIndex: Integer): string;
     function EntryRunning(AIndex: Integer): Boolean;
+    // How many windows currently have a held pixmap. Test use only.
+    function PixmapCount(): Integer;
     function EntryFocused(AIndex: Integer): Boolean;
     function EntryPinned(AIndex: Integer): Boolean;
     function EntryWindowCountAt(AIndex: Integer): Integer;
@@ -188,6 +200,11 @@ begin
   if GActiveDock = Self then
     GActiveDock := nil;
   FreeEntries();
+  if Assigned(FPixmaps) then
+  begin
+    FPixmaps.Free();
+    FPixmaps := nil;
+  end;
   for i := 0 to FIconBitmaps.Count - 1 do
     TFtBitmap(FIconBitmaps[i]).Free();
   FIconBitmaps.Free();
@@ -841,6 +858,55 @@ procedure TShellDock.RefreshDock();
 begin
   if FWindow = nil then Exit;
   LayoutButtons();
+end;
+
+procedure TShellDock.Tick();
+begin
+  inherited Tick();
+  RefreshPixmaps();
+end;
+
+procedure TShellDock.RefreshPixmaps();
+var
+  wins: array of Cardinal;
+  snapshots: TWindowSnapshotArray;
+  i, j, n: Integer;
+begin
+  if FConn = nil then Exit;
+
+  // Created lazily: the store needs the connection, which only exists once libft is up.
+  if FPixmaps = nil then
+    FPixmaps := TWindowPixmapStore.Create(FConn);
+
+  SetLength(wins, 0);
+  n := 0;
+  for i := 0 to High(FEntries) do
+    for j := 0 to High(FEntries[i].Windows) do
+    begin
+      SetLength(wins, n + 1);
+      wins[n] := FEntries[i].Windows[j];
+      Inc(n);
+    end;
+
+  // Nothing running: release every name instead of holding them for an app that may
+  // never come back. A held name outlives its window, so this is the difference between
+  // releasing and leaking.
+  if n = 0 then
+  begin
+    if FPixmaps.Count() > 0 then
+      FPixmaps.Clear();
+    Exit;
+  end;
+
+  snapshots := QueryWindowSnapshots(FConn, wins);
+  FPixmaps.Refresh(snapshots);
+end;
+
+function TShellDock.PixmapCount(): Integer;
+begin
+  if FPixmaps = nil then
+    Exit(0);
+  Result := FPixmaps.Count();
 end;
 
 end.

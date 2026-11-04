@@ -138,7 +138,9 @@ type
     procedure Show();
     procedure Hide();
     procedure RefreshTasks();
-    procedure Tick();
+    // Called on the panel timer. Virtual so a subclass can do per-tick work of its
+    // own after the task list is up to date.
+    procedure Tick(); virtual;
     // Cheap signature of the current task set, so the panel can notice a window
     // appearing or disappearing without a full refresh.
     function TaskSetSignature(): AnsiString;
