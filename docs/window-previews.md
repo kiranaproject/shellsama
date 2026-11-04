@@ -657,6 +657,128 @@ code.
 Acceptable at this size. If not, two halving passes (1920 → 416 → 208) still happen
 server-side and remain cheap.
 
+### Q5. Live refresh — `◐` implemented, **off by default**, one unresolved defect
+
+Implemented (step 6): an open popup re-composites on the panel timer, throttled to 10Hz,
+costing ~3% of one core. Gated behind `SHELLSAMA_LIVE_PREVIEW=1` because of the defect
+below, and the gate is unit-tested so it cannot turn on by accident.
+
+**The rule that makes a refresh happen** is its own unit (`ShellSama.PreviewRefresh`) with
+five tests, all sabotage-verified. Two traps it exists to avoid: a QWord subtraction
+underflows when the clock is not monotonic, turning "no time has passed" into "a very long
+time"; and an off-by-one at the interval boundary halves the refresh rate. Neither is
+visible by watching a preview. The first-call case needed a small clock to expose, because
+with `LastMs` starting at zero any large timestamp looks like a long interval and passes
+either way.
+
+### The defect: RSS grows while refreshing
+
+RSS of the shell over 30s with a preview open and the feature enabled:
+
+| Configuration | Growth |
+| :--- | :--- |
+| live refresh on | **+66 MB** |
+| live refresh on, 3 minutes | **+430 MB**, still climbing |
+| no paint work at all | +148 kB |
+| a rectangle of the same area | +140 kB |
+| an 8x8 crop of the sheet bitmap | -116 kB |
+| rebuild the sheet, never repaint | +0 kB |
+
+So it scales with the **drawn area**, and painting anything is enough; it is not specific
+to images.
+
+What was ruled out, each by measurement rather than reasoning:
+
+- **Not a Pascal heap leak.** `GetFPCHeapStatus.CurrHeapUsed` is exactly constant across
+  every refresh (389856 bytes throughout).
+- **Not live C allocations either.** An `LD_PRELOAD` interposer counting live malloc bytes
+  shows live memory *falling* to 25 MB while RSS reached 726 MB. `malloc_trim(0)` after
+  every refresh changes nothing.
+- **Not glibc heap fragmentation.** `malloc_info` attributes the growth to `mmap` regions
+  (76 MB -> 93 MB across the run), not to the heap arenas. Pinning `MALLOC_ARENA_MAX=1`
+  and `MALLOC_MMAP_THRESHOLD_=1MB` makes no difference.
+- **Not the sheet buffer.** It was changed to read into the bitmap's own pixels instead of
+  a fresh `GetMem` per refresh (which also removed a full copy); growth is unchanged.
+- **Not the toolkit's draw path.** A standalone C program against the same libft draws the
+  same 450x163 bitmap into a drawing area 841 times and stays flat at 4.0 MB, matched on
+  window size, window type (`POPUP_MENU`), borderless, and bitmap alpha.
+- **Not XCB.** 300 `xcb_put_image` calls of a full sheet from a C program: 2.6 MB -> 2.6 MB.
+
+`/proc/pid/smaps` at the end shows one 97 MB `rw-p` mapping and several ~33 MB ones. That
+is the shape of a repeatedly grown-and-never-released arena, but neither `malloc_trim` nor
+the allocator tunables reach it, so the next step is `valgrind --tool=massif` or
+`heaptrack`, neither of which is installed here. That is the honest state: the defect is
+characterised, reproducible, and not yet fixed.
+
+**Why it stays gated.** A preview that updates is a cosmetic improvement; a shell that
+grows half a gigabyte in three minutes is not. Gating keeps the feature testable, keeps
+the default clean, and makes the trade explicit.
+
+**Why not damage.** Damage does reach a non-owning client — measured, and
+`scripts/probe-damage-visibility.py` asserts it, including that it keeps arriving for
+sustained drawing. Two traps there: the extension needs `QueryVersion` on the connection
+first, or the server accepts the damage object and never delivers events; and a window
+that has not been drawn to produces no damage, so a probe that types into an unfocused
+window reports "no damage" and measures its own bug. Both are now handled in the probe.
+Damage would not help here regardless: it fires on every draw, so a busy window would
+refresh more often than the timer, and this defect is proportional to drawing.
+
+**Refresh cost, measured** (`scripts/probe-refresh-cost.py`): one 886x314 readback has a
+median of 2.3ms. Timing was never the problem.
+
+---
+
+## 8. Open Questions
+
+### Q1. Does a minimized window still have a valid named pixmap? — `☑` **answered**
+
+Answered by measurement, see [§7.5](#75-minimized-windows-measured). The short version:
+
+- the last frame **does** survive a minimize, so `wmsama` needs no snapshot at iconify
+  time and this repository stays the only one that changes;
+- but a pixmap **cannot be named while the window is unmapped** (`BadMatch`), so the dock
+  must hold the name from before the minimize;
+- the held name is a live view, not a snapshot, so holding costs nothing and needs no
+  refresh;
+- the name goes stale on resize and on re-map, so those two events force a re-name.
+
+The consequence is §7.2: one named pixmap per window, maintained for the window's life,
+instead of a fresh name per popup open.
+
+### Q2. Client or frame?
+
+`NameWindowPixmap` accepts either. Client-only is recommended: at 208px the titlebar is
+noise and the content is what identifies the window. Revisit if the previews read as
+anonymous.
+
+### Q3. Dismissal
+
+A custom popup does not inherit outside-click dismissal. Today that lives inside
+`TFtPopupMenu`: `FtGrabMenuInput` takes a pointer and keyboard grab
+(`floria-toolkit/src/main/pascal/ft.backend.x11.pas:575`) and the backend dismisses when a
+press lands outside the popup's bounds (`:2430-2446`). That path is hardwired to
+`GGrabbedPopup` being a `TFtPopupMenu`, including casts, and `FtGrabMenuInput` is not
+exported to ftpas at all.
+
+Two options:
+
+- **Toolkit addition, ~30 lines.** Export the grab pair and add
+  `ft_window_set_popup_dismiss(window, callback)`; the backend calls the callback instead
+  of `DismissAll` when the grabbed window is not a menu. Behaviour then matches native
+  popups, including Escape.
+- **No toolkit change.** Close on tile click, on clicking the icon again, on any dock
+  interaction, and on drawing-area `OnMouseLeave` after ~400 ms. Covers most cases but
+  dismisses on hover rather than on click, which reads as twitchy.
+
+Not blocking, but it is the only part that needs a decision outside this repository's UI
+code.
+
+### Q4. Downscale quality
+
+1920 → 208 is 9:1 through one bilinear filter; title text in the thumbnail will alias.
+Acceptable at this size. If not, two halving passes (1920 → 416 → 208) still happen
+server-side and remain cheap.
+
 ### Q5. Live refresh — `◐` implemented, **off by default**, two unresolved defects
 
 Implemented (step 6): an open popup re-composites on the panel timer, throttled to 10Hz,

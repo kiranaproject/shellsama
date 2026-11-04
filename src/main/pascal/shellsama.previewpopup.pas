@@ -78,9 +78,7 @@ type
     FWindow   : TFtWindow;
     FArea     : TFtDrawingArea;
     FSheet    : TFtBitmap;
-    // Raw BGRA rows for the sheet, kept only long enough for ft_bitmap_create_from_bgra
-    // to copy them.
-    FSheetPixels: Pointer;
+    // Size of the sheet in bytes, used to bound the readback into FSheet.Pixels.
     FSheetPixelsSize: Integer;
     FCaptionFont: TFtFontRef;
 
@@ -165,6 +163,14 @@ type
 
 implementation
 
+
+
+
+
+
+
+
+
 constructor TShellPreviewPopup.Create(AConn: Pxcb_connection_t;
   ARoot, ARootVisual: Cardinal; ATopInset: Integer);
 begin
@@ -183,7 +189,6 @@ begin
   FWindow := nil;
   FArea := nil;
   FSheet := nil;
-  FSheetPixels := nil;
   FSheetPixelsSize := 0;
   FCaptionFont := TFtFontRef.Create('Sans 9');
 end;
@@ -203,12 +208,7 @@ begin
     FSheet.Free();
     FSheet := nil;
   end;
-  if FSheetPixels <> nil then
-  begin
-    FreeMem(FSheetPixels);
-    FSheetPixels := nil;
-    FSheetPixelsSize := 0;
-  end;
+  FSheetPixelsSize := 0;
 end;
 
 procedure TShellPreviewPopup.ReleaseTileMenu();
@@ -301,27 +301,40 @@ begin
   end;
 
   // One readback for the whole grid, then the pixmap can go: the bytes are the sheet.
+  // Read straight into the bitmap's own buffer, allocating the bitmap ONCE per popup.
+  //
+  // This is the fix for the refresh leak. A sheet is ~1.1MB, which is above glibc's
+  // mmap threshold, so allocating a fresh buffer with GetMem and freeing it each refresh
+  // maps and unmaps a region per refresh; the address space (and RSS) grows long before
+  // the allocator reuses it. Reading into a buffer that already exists keeps the memory
+  // in one place, and it also removes a full copy: CreateFromBGRA used to copy the whole
+  // sheet again.
   FSheetPixelsSize := FLayout.Width * FLayout.Height * 4;
-  GetMem(FSheetPixels, FSheetPixelsSize);
-  if not XcbRenderReadPixmap(FConn, sheetPixmap, FLayout.Width, FLayout.Height,
-                             FSheetPixels, FSheetPixelsSize) then
+  if (FSheet = nil) or (FSheet.Width <> FLayout.Width) or
+     (FSheet.Height <> FLayout.Height) then
   begin
-    FreeMem(FSheetPixels);
-    FSheetPixels := nil;
-    FSheetPixelsSize := 0;
+    if Assigned(FSheet) then
+    begin
+      FSheet.Free();
+      FSheet := nil;
+    end;
+    // The toolkit's own bitmap constructor, not TFtBitmap.Wrap: a TFloriaImage built by
+    // this program's copy of the image unit is a different class object from the one
+    // libft checks for, and the draw call would silently skip it.
+    FSheet := TFtBitmap.Create(FLayout.Width, FLayout.Height);
+  end;
+
+  if Assigned(FSheet) and (FSheet.Pixels <> nil) then
+  begin
+    if XcbRenderReadPixmap(FConn, sheetPixmap, FLayout.Width, FLayout.Height,
+                           FSheet.Pixels, FSheetPixelsSize) then
+    begin
+      // Render's output is premultiplied; ftpas has no way to mark a bitmap as such, so
+      // straighten it here or every partially transparent window draws too dark.
+      XcbDemultiplyBgra(FSheet.Pixels, FLayout.Width, FLayout.Height);
+    end;
   end;
   xcb_free_pixmap(FConn, sheetPixmap);
-
-  if FSheetPixels <> nil then
-  begin
-    // Render's output is premultiplied; ftpas has no way to mark a bitmap as such, so
-    // straighten it here or every partially transparent window draws too dark.
-    XcbDemultiplyBgra(FSheetPixels, FLayout.Width, FLayout.Height);
-    // Through the toolkit's own bitmap constructor rather than TFtBitmap.Wrap: a
-    // TFloriaImage built by this program's copy of the image unit is a different class
-    // object from the one libft checks for, and the draw call would silently skip it.
-    FSheet := TFtBitmap.CreateFromBGRA(FSheetPixels, FLayout.Width, FLayout.Height);
-  end;
 end;
 
 procedure TShellPreviewPopup.Show(const AWindows: array of Cardinal;
