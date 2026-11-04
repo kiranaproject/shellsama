@@ -28,6 +28,7 @@ type
     procedure TestDockTickIsSafe();
     procedure TestResizeKeepsTheSameWindow();
     procedure TestPinnedAppsAppearWithNothingRunning();
+    procedure TestLivePreviewIsOffUnlessAskedFor();
     procedure TestTileMenuOffersTheWindowActions();
     procedure TestTileMenuCaptionFollowsTheWindowState();
     procedure TestTickDoesNotAccumulatePixmaps();
@@ -252,6 +253,20 @@ begin
     else if FileExists(cfgPath) then
       DeleteFile(cfgPath);
   end;
+end;
+
+procedure TDockTest.TestLivePreviewIsOffUnlessAskedFor();
+begin
+  // Live refresh is opt-in while the refresh path leaks; see docs/window-previews.md Q5.
+  // This test pins the default so enabling it cannot happen by accident: that would ship
+  // a memory leak to every user in exchange for a cosmetic improvement.
+  AssertFalse('live preview is off by default', FDock.PreviewLive());
+
+  // It can still be turned on explicitly, which is what the live probes do.
+  FDock.SetPreviewLive(True);
+  AssertTrue('and can be enabled', FDock.PreviewLive());
+  FDock.SetPreviewLive(False);
+  AssertFalse('and disabled again', FDock.PreviewLive());
 end;
 
 procedure TDockTest.TestTileMenuOffersTheWindowActions();

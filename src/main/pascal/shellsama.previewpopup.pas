@@ -34,6 +34,7 @@ uses
   Floria.XCB.Render.Pictures,
   ftpas.api, ftpas.types, ftpas, ftpas.creative,
   ShellSama.PreviewLayout,
+  ShellSama.PreviewRefresh,
   ShellSama.WindowPixmaps;
 
 type
@@ -58,7 +59,13 @@ const
   // 32-bit so the sheet can be transparent outside the tiles. Windows are composited
   // OVER it, so their own alpha is preserved: a terminal with a transparent background
   // shows the plate through it, exactly as it would on screen.
-  PREVIEW_SHEET_DEPTH = 32;
+  PREVIEW_SHEET_DEPTH = 24;
+
+  // Minimum time between live refreshes. Measured at ~2.3ms for a full 8-tile sheet
+  // (scripts/probe-refresh-cost.py), so 10 per second costs a few percent of one core.
+  // Faster buys nothing: the content a preview shows changes at human speed, and a
+  // preview that repaints at 60Hz would keep a laptop's GPU busy for no reason.
+  PREVIEW_REFRESH_MS = 100;
 
 type
   TShellPreviewPopup = class
@@ -83,6 +90,17 @@ type
     FHover    : Integer;
     FOpen     : Boolean;
     FTileMenu : TFtPopupMenu;
+
+    // Live refresh. The held pixmaps are live views of the windows, so re-compositing is
+    // all that is needed to show new content; nothing has to be re-named.
+    FLive       : Boolean;
+    FRefresh    : TPreviewRefreshState;
+    // Kept so a refresh can rebuild without the caller passing the store again.
+    FStore      : TWindowPixmapStore;
+    // Set when a tile menu has been shown and cleared when the popup is released. There is
+    // no menu-close notification, and a refresh while the menu is up repaints underneath
+    // it; after the action the popup closes anyway, so this only has to be conservative.
+    FTileMenuShown: Boolean;
 
     FOnActivate: TPreviewActivateEvent;
     FOnDismiss : TPreviewDismissEvent;
@@ -133,6 +151,13 @@ type
     // Test seam: the window id of the popup, or 0 when closed.
     function NativeWindow(): Cardinal;
 
+    // Turns live refresh on or off for the open popup.
+    procedure SetLive(AValue: Boolean);
+    function Live(): Boolean;
+    // Re-composites the sheet if the refresh interval has elapsed. Returns True when it
+    // actually rebuilt, so a caller (and a test) can tell a real refresh from a skip.
+    function RefreshIfDue(ANowMs: QWord): Boolean;
+
     property OnActivate: TPreviewActivateEvent read FOnActivate write FOnActivate;
     property OnDismiss: TPreviewDismissEvent read FOnDismiss write FOnDismiss;
     property OnBuildTileMenu: TPreviewBuildTileMenu read FOnBuildTileMenu write FOnBuildTileMenu;
@@ -151,6 +176,10 @@ begin
   FHover := -1;
   FOpen := False;
   FTileMenu := nil;
+  FLive := False;
+  FRefresh := PreviewRefreshStateInit();
+  FStore := nil;
+  FTileMenuShown := False;
   FWindow := nil;
   FArea := nil;
   FSheet := nil;
@@ -184,6 +213,7 @@ end;
 
 procedure TShellPreviewPopup.ReleaseTileMenu();
 begin
+  FTileMenuShown := False;
   if Assigned(FTileMenu) then
   begin
     FTileMenu.Close();
@@ -195,6 +225,7 @@ end;
 procedure TShellPreviewPopup.ReleaseWindow();
 begin
   ReleaseTileMenu();
+  FStore := nil;
   if Assigned(FArea) then
   begin
     FArea.Free();
@@ -303,6 +334,8 @@ begin
   Release();
   if Length(AWindows) = 0 then Exit;
 
+  FStore := AStore;
+
   SetLength(FWindows, Length(AWindows));
   for i := 0 to High(AWindows) do
     FWindows[i] := AWindows[i];
@@ -347,6 +380,7 @@ begin
   FWindow.Invalidate();
 
   FOpen := True;
+  FRefresh := PreviewRefreshStateInit();
 end;
 
 procedure TShellPreviewPopup.Close();
@@ -358,6 +392,37 @@ begin
   end;
   FOpen := False;
   FHover := -1;
+end;
+
+procedure TShellPreviewPopup.SetLive(AValue: Boolean);
+begin
+  FLive := AValue;
+end;
+
+function TShellPreviewPopup.Live(): Boolean;
+begin
+  Result := FLive;
+end;
+
+function TShellPreviewPopup.RefreshIfDue(ANowMs: QWord): Boolean;
+begin
+  Result := False;
+  if not FOpen or not FLive then Exit;
+  if not Assigned(FWindow) or not Assigned(FArea) then Exit;
+  if not Assigned(FStore) then Exit;
+
+  // Not while the tile menu is up. The menu is a separate window, but rebuilding the
+  // sheet behind it repaints the popup underneath, which flicks. FTileMenu.Visible is
+  // not usable for this: the menu widget is a child of the popup's window and its
+  // Visible flag tracks the toolkit's own bookkeeping, not whether its popup window is
+  // mapped, so it says True even before Show.
+  if FTileMenuShown then Exit;
+
+  if not PreviewRefreshDue(FRefresh, ANowMs) then Exit;
+
+  BuildSheet(FStore);
+  FArea.Invalidate();
+  Result := True;
 end;
 
 function TShellPreviewPopup.IsOpen(): Boolean;
@@ -507,6 +572,7 @@ begin
   // The drawing area fills the popup, so its coordinates are already window-local, and
   // ft_popup_menu_show converts window-local to screen itself. Passing screen
   // coordinates here would add the popup's origin a second time.
+  FTileMenuShown := True;
   FTileMenu.Show(AX, AY);
 end;
 

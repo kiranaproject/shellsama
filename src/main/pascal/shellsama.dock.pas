@@ -54,6 +54,7 @@ type
     FLayoutIconSize : Integer;
     FLayoutIconX    : Integer;
     FSkipEntryRebuild: Boolean;
+    FPreviewLive  : Boolean;
     FScrollOffset   : Integer;   // pixels the row is scrolled left
     FMaxScroll      : Integer;   // 0 when the row fits
     FContentWidth   : Integer;
@@ -133,6 +134,10 @@ type
     function EntryRunning(AIndex: Integer): Boolean;
     // How many windows currently have a held pixmap. Test use only.
     function PixmapCount(): Integer;
+    // Turns live refresh on for previews. On by default; a test or a low-power session can
+    // turn it off.
+    procedure SetPreviewLive(AValue: Boolean);
+    function PreviewLive(): Boolean;
     // Opens the preview for the app whose key is AAppKey, as a click would. Test use
     // only: without it the popup can only be reached through real pointer input.
     procedure DebugShowPreview(const AAppKey: string);
@@ -199,6 +204,13 @@ begin
   // Set before the inherited constructor, which creates the window and lays out.
   FIconSize := DOCK_ICON_SIZE;
   FMaxDockWidth := DOCK_MAX_WIDTH;
+  // Off by default: see docs/window-previews.md §9 (Q5). Refreshing an open preview
+  // grows the shell's RSS by ~66MB per 30s, and the growth is in the popup's repaint of
+  // the sheet rather than in the sheet build. It is not in the toolkit: a standalone
+  // program drawing the same bitmap 841 times stays flat. Until that is understood,
+  // enabling this by default would trade a cosmetic improvement for a leak, so it is
+  // opt-in. SHELLSAMA_LIVE_PREVIEW=1 turns it on.
+  FPreviewLive := GetEnvironmentVariable('SHELLSAMA_LIVE_PREVIEW') = '1';
 
   apps := nil;
   if Assigned(ALauncher) then
@@ -873,6 +885,7 @@ begin
     iconTop := dockY;
   end;
 
+  FPreview.SetLive(FPreviewLive);
   FPreview.Show(wins, titles, FPixmaps, centerX, iconTop, screenW);
 end;
 
@@ -983,6 +996,17 @@ begin
   inherited Tick();
   RefreshPixmaps();
   SyncPreview();
+
+  // Live previews. Cheap enough to run here: a full eight-tile sheet measures ~2.3ms
+  // (scripts/probe-refresh-cost.py), and the popup only asks for one every 100ms.
+  //
+  // This is why damage is not used. The toolkit's event filter is a single global
+  // callback that shellsama's tray already chains to the launcher's; a third link in that
+  // chain would silently replace one of them, and DamageNotify delivery to a non-owning
+  // client depends on initialising the extension first, which is one more thing to get
+  // wrong for a popup that is open for a second.
+  if FPreviewLive and Assigned(FPreview) and FPreview.IsOpen() then
+    FPreview.RefreshIfDue(GetTickCount64());
 end;
 
 procedure TShellDock.RefreshPixmaps();
@@ -1019,6 +1043,18 @@ begin
 
   snapshots := QueryWindowSnapshots(FConn, wins);
   FPixmaps.Refresh(snapshots);
+end;
+
+procedure TShellDock.SetPreviewLive(AValue: Boolean);
+begin
+  FPreviewLive := AValue;
+  if Assigned(FPreview) then
+    FPreview.SetLive(AValue);
+end;
+
+function TShellDock.PreviewLive(): Boolean;
+begin
+  Result := FPreviewLive;
 end;
 
 procedure TShellDock.DebugBuildTileMenu(AWindow: Cardinal; AMenu: TFtPopupMenu);

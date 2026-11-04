@@ -657,12 +657,155 @@ code.
 Acceptable at this size. If not, two halving passes (1920 → 416 → 208) still happen
 server-side and remain cheap.
 
-### Q5. Live refresh
+### Q5. Live refresh — `◐` implemented, **off by default**, two unresolved defects
 
-Not in this design. Cost scales with output pixels, so one 208x117 composite is trivial,
-but the source sampling is still 2M pixels per window on a software server. Damage-driven
-and throttled to 5–10 fps is the ceiling if it is ever wanted. Windows gets it free because
-DWM owns the surfaces; here it would cost a timer and damage wiring in the shell.
+Implemented (step 6): an open popup re-composites on the panel timer, throttled to 10Hz,
+and costs ~3% of one core when it runs. Two defects keep it off by default, gated behind
+`SHELLSAMA_LIVE_PREVIEW=1`.
+
+**Defect 1: refreshing grows the shell's memory.** RSS over 30 seconds, preview open,
+450x163 sheet:
+
+| What the popup draws | RSS growth |
+| :--- | :--- |
+| the sheet bitmap, live refresh on | **+66 MB** |
+| captions only, no bitmap | +132 kB |
+| a rectangle of the same area | +140 kB |
+| an 8x8 crop of the same bitmap | -116 kB |
+| rebuild the sheet, never repaint | +0 kB |
+| repaint the same cached bitmap, no rebuild | +66 MB |
+| one bitmap reused instead of rebuilt | +66 MB |
+
+Not the sheet build, not the bitmap lifetime, not drawing in general. It is drawing *a
+bitmap*, and it scales with the drawn area. It is **not** the toolkit's draw path: a
+standalone C program against the same libft draws a 450x163 bitmap in a drawing area 841
+times and stays flat at 4.0 MB, matched on window size, window type, borderless and
+bitmap alpha.
+
+**Defect 2: the sheet changes but the screen does not follow.** Content hashes of the
+rebuilt sheet differ on every refresh, so `BuildSheet` is producing new pixels. A root
+screenshot of the popup area stays identical across six samples 400ms apart. So the
+rebuild happens and the repaint does not reach the screen. `RefreshIfDue` returns True
+(it was instrumented), and it calls `FArea.Invalidate()`.
+
+An earlier build of the same feature *did* show updating previews (five distinct frames
+from five samples, and disabling the refresh froze them). That is recorded rather than
+discarded: it means the feature can work, and the difference between that run and the
+later ones is not yet identified.
+
+**Why gated.** A preview that updates is a small improvement; 66 MB per half-minute is
+not. The gate keeps the feature testable, keeps the default path clean, and makes the
+decision explicit rather than shipping either defect.
+
+**Why not damage.** Damage does reach a non-owning client — measured, and
+`scripts/probe-damage-visibility.py` asserts it, including that it keeps arriving for
+sustained drawing. It needs `QueryVersion` on the connection first, which is the trap that
+made an earlier version of that probe report "no damage" when the real problem was that
+nothing had been drawn. But damage would not help: it fires on every draw, so a busy
+window would refresh more often than the timer, and defect 1 is proportional to redraws.
+
+**Refresh cost, measured** (`scripts/probe-refresh-cost.py`): one 886x314 readback has a
+median of 2.3ms. Timing was never the problem.
+
+---
+
+## 8. Open Questions
+
+### Q1. Does a minimized window still have a valid named pixmap? — `☑` **answered**
+
+Answered by measurement, see [§7.5](#75-minimized-windows-measured). The short version:
+
+- the last frame **does** survive a minimize, so `wmsama` needs no snapshot at iconify
+  time and this repository stays the only one that changes;
+- but a pixmap **cannot be named while the window is unmapped** (`BadMatch`), so the dock
+  must hold the name from before the minimize;
+- the held name is a live view, not a snapshot, so holding costs nothing and needs no
+  refresh;
+- the name goes stale on resize and on re-map, so those two events force a re-name.
+
+The consequence is §7.2: one named pixmap per window, maintained for the window's life,
+instead of a fresh name per popup open.
+
+### Q2. Client or frame?
+
+`NameWindowPixmap` accepts either. Client-only is recommended: at 208px the titlebar is
+noise and the content is what identifies the window. Revisit if the previews read as
+anonymous.
+
+### Q3. Dismissal
+
+A custom popup does not inherit outside-click dismissal. Today that lives inside
+`TFtPopupMenu`: `FtGrabMenuInput` takes a pointer and keyboard grab
+(`floria-toolkit/src/main/pascal/ft.backend.x11.pas:575`) and the backend dismisses when a
+press lands outside the popup's bounds (`:2430-2446`). That path is hardwired to
+`GGrabbedPopup` being a `TFtPopupMenu`, including casts, and `FtGrabMenuInput` is not
+exported to ftpas at all.
+
+Two options:
+
+- **Toolkit addition, ~30 lines.** Export the grab pair and add
+  `ft_window_set_popup_dismiss(window, callback)`; the backend calls the callback instead
+  of `DismissAll` when the grabbed window is not a menu. Behaviour then matches native
+  popups, including Escape.
+- **No toolkit change.** Close on tile click, on clicking the icon again, on any dock
+  interaction, and on drawing-area `OnMouseLeave` after ~400 ms. Covers most cases but
+  dismisses on hover rather than on click, which reads as twitchy.
+
+Not blocking, but it is the only part that needs a decision outside this repository's UI
+code.
+
+### Q4. Downscale quality
+
+1920 → 208 is 9:1 through one bilinear filter; title text in the thumbnail will alias.
+Acceptable at this size. If not, two halving passes (1920 → 416 → 208) still happen
+server-side and remain cheap.
+
+### Q5. Live refresh — `◐` implemented, **off by default**, blocked on a leak
+
+Implemented (step 6) and working: an open popup re-composites every 100ms, the previews
+update while open, and the cost is ~3% of one core. It is **disabled by default** and
+gated behind `SHELLSAMA_LIVE_PREVIEW=1`, because refreshing grows the shell's memory and
+the cause is not yet identified.
+
+**Measurement.** RSS of the shellsama process, 30 seconds, preview open, 450x163 sheet:
+
+| What the popup draws | RSS growth over 30s |
+| :--- | :--- |
+| the sheet bitmap (live refresh on) | **+66 MB** |
+| captions only, no bitmap | +132 kB |
+| a rectangle of the same area | +140 kB |
+| an 8x8 crop of the same bitmap | -116 kB |
+| rebuild the sheet, never repaint | +0 kB |
+| repaint the same cached bitmap, no rebuild | +66 MB |
+| one bitmap reused instead of rebuilt | +66 MB |
+
+So: not the sheet build, not the bitmap lifetime, and not drawing in general. It is
+drawing *a bitmap*, and it scales with the drawn area. It also is not the toolkit's draw
+path: a standalone C program against the same libft draws a 450x163 bitmap in a drawing
+area 841 times (sampled over 12s) and its RSS stays flat at 4.0 MB. Matched on window
+size, window type (`POPUP_MENU`), borderless, and bitmap alpha.
+
+That leaves the difference inside the popup rather than in the draw itself, and it is not
+yet found. Candidates not yet excluded: the popup's window being depth 32 while the sheet
+is depth 32 but the toolkit's buffer is depth 24; the interaction between the popup's
+grab and the toolkit's repaint scheduling; something in `TFtWindow.Repaint`'s translucent
+partial-repaint path that only triggers at the popup's invalidation pattern.
+
+**Why it is gated rather than shipped enabled**: a preview that updates is a small
+improvement; 66 MB per half-minute is not. Gating keeps the feature testable and keeps
+the default path free of it.
+
+**Why not damage.** Damage does reach a non-owning client — measured, and
+`scripts/probe-damage-visibility.py` asserts it, including that it keeps arriving for
+sustained drawing. It needs `QueryVersion` on the connection first, which is the trap that
+made an earlier version of that probe report "no damage" when the real problem was a
+window that had not been drawn to. But damage would not help here: it fires on *every*
+draw, so a busy window would refresh more often than the timer, not less, and the leak is
+proportional to redraws. The timer is both cheaper and throttled by construction.
+
+**Refresh cost, measured** (`scripts/probe-refresh-cost.py`): one 886x314 readback has a
+median of 2.3ms on this machine. That is the dominant cost of a refresh; the composites
+are bounded by the destination area. So the timing was never the problem.
 
 ---
 
