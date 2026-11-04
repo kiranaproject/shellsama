@@ -59,7 +59,12 @@ const
   // 32-bit so the sheet can be transparent outside the tiles. Windows are composited
   // OVER it, so their own alpha is preserved: a terminal with a transparent background
   // shows the plate through it, exactly as it would on screen.
-  PREVIEW_SHEET_DEPTH = 24;
+  //
+  // Not 24. A 24-bit sheet has no alpha channel, so the picture format comes back opaque,
+  // OVER has no destination alpha to write, and every tile is composited onto whatever
+  // the fill left behind -- which is transparent black. The result is tiles that look
+  // like holes punched in the popup.
+  PREVIEW_SHEET_DEPTH = 32;
 
   // Minimum time between live refreshes. Measured at ~2.3ms for a full 8-tile sheet
   // (scripts/probe-refresh-cost.py), so 10 per second costs a few percent of one core.
