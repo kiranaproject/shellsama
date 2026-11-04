@@ -262,7 +262,10 @@ var
   visual: Cardinal;
   r: TPreviewRect;
 begin
-  ReleaseSheet();
+  // Deliberately NOT ReleaseSheet(): a refresh reuses the existing bitmap and only
+  // reallocates it when the grid size changes. Freeing it here recreated the bitmap on
+  // every refresh, which defeated the caching and left the paint callback reading an
+  // object that had just been destroyed.
   if (FConn = nil) or (FRoot = 0) or (FLayout.Width <= 0) then Exit;
 
   // The sheet's format must match the sheet's own depth, not the root window's. Asking
@@ -434,6 +437,8 @@ begin
   if not PreviewRefreshDue(FRefresh, ANowMs) then Exit;
 
   BuildSheet(FStore);
+  // Force a full repaint rather than a dirty-rect one. The popup is small, so the cost
+  // difference is negligible, and it removes the partial-present path from the question.
   FArea.Invalidate();
   Result := True;
 end;

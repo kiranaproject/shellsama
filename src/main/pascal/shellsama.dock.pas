@@ -204,13 +204,12 @@ begin
   // Set before the inherited constructor, which creates the window and lays out.
   FIconSize := DOCK_ICON_SIZE;
   FMaxDockWidth := DOCK_MAX_WIDTH;
-  // Off by default: see docs/window-previews.md §9 (Q5). Refreshing an open preview
-  // grows the shell's RSS by ~66MB per 30s, and the growth is in the popup's repaint of
-  // the sheet rather than in the sheet build. It is not in the toolkit: a standalone
-  // program drawing the same bitmap 841 times stays flat. Until that is understood,
-  // enabling this by default would trade a cosmetic improvement for a leak, so it is
-  // opt-in. SHELLSAMA_LIVE_PREVIEW=1 turns it on.
-  FPreviewLive := GetEnvironmentVariable('SHELLSAMA_LIVE_PREVIEW') = '1';
+  // On by default. It was opt-in while a refresh grew the shell's memory by 66MB/30s;
+  // that turned out to be the toolkit choosing its EGL backend on a server with no DRI3
+  // device, so every repaint ran through gallium's software path. The toolkit now asks
+  // the server instead of assuming, and a refresh costs ~3% of one core with flat RSS
+  // (see docs/window-previews.md Q5). SHELLSAMA_LIVE_PREVIEW=0 still turns it off.
+  FPreviewLive := GetEnvironmentVariable('SHELLSAMA_LIVE_PREVIEW') <> '0';
 
   apps := nil;
   if Assigned(ALauncher) then

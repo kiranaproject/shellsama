@@ -657,6 +657,133 @@ code.
 Acceptable at this size. If not, two halving passes (1920 → 416 → 208) still happen
 server-side and remain cheap.
 
+### Q5. Live refresh — `◐` implemented, **off by default**, root cause of the leak found
+
+### The leak is fixed, and it was not in the preview code
+
+`heaptrack` named it in one run: 199,000 allocations and 133MB of peak from
+**libgallium** (Mesa's software rasteriser), reached through `driCreateContextAttribs`.
+Not libft, not the shell.
+
+The chain: `ft_init` in the toolkit does
+
+```pascal
+else if (env = 'gpu') or FtEGLIsAvailable() then
+  FtEnableEGLBackend(True);
+```
+
+and `FtEGLIsAvailable` only asks whether Mesa *loads*. On an X server with no DRI3 device
+— a nested Xephyr, a remote display, a VM without passthrough — Mesa loads, initialises,
+accepts a context, and silently renders with llvmpipe. So shellsama ran every repaint
+through gallium's software path. Under continuous preview refresh that is unboundeed
+growth; the toolkit warned about this path in its own code: `"Could not get DRI3 device /
+Ensure your X server supports DRI3 to get accelerated rendering"`.
+
+The fix is in `FtEGLHasHardwareDevice` (`ft.backend.egl.pas`): ask the X server whether
+DRI3 is present before enabling the EGL backend. Measured with the preview refreshing:
+
+| | RSS over 90s |
+| :--- | :--- |
+| before (EGL chosen on a software server) | 297MB -> 496MB |
+| after (software path chosen) | 24.3MB -> 25.0MB |
+| after, sabotaged back | 24MB -> 496MB |
+
+The sabotage reproduces the old numbers exactly, so the probe is what fixes it. Baseline
+RSS also drops from ~298MB to ~24MB, because the shell no longer carries a Mesa context it
+could not use.
+
+This also means the earlier "an 8x8 blit does not leak but a 450x163 one does" result was
+really "a small blit does not push gallium hard enough to grow". The area dependence was
+in Mesa, not in the preview.
+
+### What is still wrong
+
+The previews do not visibly update. The sheet provably contains new pixels on every
+refresh — hashing it inside the paint callback gives the same changing values as hashing
+it at build time — and the window repaints fully 128 times in a 20-second window
+(`0,0 450x163`, partial). Reading the popup back through `NameWindowPixmap` shows no
+change, while the same readback on a neighbouring xterm changes on 3 of 4 samples, so the
+measurement is sound and the server really is not receiving new pixels.
+
+That contradiction is unresolved. Ruled out by experiment: the sheet buffer (recreating
+the bitmap per refresh makes no difference), the invalidation path (invalidating the
+window instead of the area makes no difference), the partial-present branch (the popup
+presents full-width, and the branch is correct), and the bitmap identity (the paint sees
+the same object the build wrote).
+
+The next step is to instrument `PresentPixels` itself — log the first pixel of the buffer
+immediately before `xcb_put_image` and compare it with what the server then reports. That
+distinguishes "wrong pixels written" from "right pixels written and then lost".
+
+### Why it is off by default
+
+It works (the previews are correct when the popup opens) but does not refresh, so enabling
+it by default would be a lie in the UI: a live preview that never goes live. The gate is
+`SHELLSAMA_LIVE_PREVIEW=1`, and a unit test pins the default.
+
+### Why not damage
+
+Damage does reach a non-owning client — measured, and `scripts/probe-damage-visibility.py`
+asserts it, including for sustained drawing. Two traps there: the extension needs
+`QueryVersion` on the connection first, or the server accepts the damage object and never
+delivers events; and a window that has not been drawn to produces no damage, so a probe
+that types into an unfocused window reports "no damage" and measures its own bug. Neither
+matters here yet: the refresh already runs and costs ~3% of one core
+(`scripts/probe-refresh-cost.py`: 2.3ms median per sheet readback).
+
+---
+
+## 8. Open Questions
+
+### Q1. Does a minimized window still have a valid named pixmap? — `☑` **answered**
+
+Answered by measurement, see [§7.5](#75-minimized-windows-measured). The short version:
+
+- the last frame **does** survive a minimize, so `wmsama` needs no snapshot at iconify
+  time and this repository stays the only one that changes;
+- but a pixmap **cannot be named while the window is unmapped** (`BadMatch`), so the dock
+  must hold the name from before the minimize;
+- the held name is a live view, not a snapshot, so holding costs nothing and needs no
+  refresh;
+- the name goes stale on resize and on re-map, so those two events force a re-name.
+
+The consequence is §7.2: one named pixmap per window, maintained for the window's life,
+instead of a fresh name per popup open.
+
+### Q2. Client or frame?
+
+`NameWindowPixmap` accepts either. Client-only is recommended: at 208px the titlebar is
+noise and the content is what identifies the window. Revisit if the previews read as
+anonymous.
+
+### Q3. Dismissal
+
+A custom popup does not inherit outside-click dismissal. Today that lives inside
+`TFtPopupMenu`: `FtGrabMenuInput` takes a pointer and keyboard grab
+(`floria-toolkit/src/main/pascal/ft.backend.x11.pas:575`) and the backend dismisses when a
+press lands outside the popup's bounds (`:2430-2446`). That path is hardwired to
+`GGrabbedPopup` being a `TFtPopupMenu`, including casts, and `FtGrabMenuInput` is not
+exported to ftpas at all.
+
+Two options:
+
+- **Toolkit addition, ~30 lines.** Export the grab pair and add
+  `ft_window_set_popup_dismiss(window, callback)`; the backend calls the callback instead
+  of `DismissAll` when the grabbed window is not a menu. Behaviour then matches native
+  popups, including Escape.
+- **No toolkit change.** Close on tile click, on clicking the icon again, on any dock
+  interaction, and on drawing-area `OnMouseLeave` after ~400 ms. Covers most cases but
+  dismisses on hover rather than on click, which reads as twitchy.
+
+Not blocking, but it is the only part that needs a decision outside this repository's UI
+code.
+
+### Q4. Downscale quality
+
+1920 → 208 is 9:1 through one bilinear filter; title text in the thumbnail will alias.
+Acceptable at this size. If not, two halving passes (1920 → 416 → 208) still happen
+server-side and remain cheap.
+
 ### Q5. Live refresh — `◐` implemented, **off by default**, one unresolved defect
 
 Implemented (step 6): an open popup re-composites on the panel timer, throttled to 10Hz,
