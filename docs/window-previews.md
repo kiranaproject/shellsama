@@ -366,38 +366,43 @@ it.
 ### 7.3 Sequence, Once Per Popup Open
 
 ```pascal
-  // One sheet, the size of the grid's content area, depth 24.
+  // One sheet, the size of the grid's content area.
   sheet := xcb_generate_id(conn);
-  xcb_create_pixmap(conn, 24, sheet, root, sheetW, sheetH);
+  xcb_create_pixmap(conn, sheetDepth, sheet, root, sheetW, sheetH);
+  dstFormat := XcbRenderPictFormatForDepth(conn, sheetDepth);
   dstPic := xcb_generate_id(conn);
-  xcb_render_create_picture(conn, dstPic, sheet, rgb24Format, 0, nil);
+  XcbRenderCreatePicture(conn, dstPic, sheet, dstFormat, 0, nil);
   // Plate colour underneath, so letterboxed areas are not black.
-  xcb_render_fill_rectangles(conn, XCB_RENDER_PICT_OP_SRC, dstPic, plateColour, 1, @sheetRect);
+  XcbRenderFill(conn, dstPic, plateR, plateG, plateB, 1.0, 0, 0, sheetW, sheetH);
 
   for i := 0 to High(FPreviewWindows) do
   begin
-    // Held since the window appeared. Index 0 means never mapped: nothing to show.
+    // Held since the window appeared. No entry means never mapped: nothing to show.
     idx := PixmapIndex(FPreviewWindows[i]);
     if idx < 0 then Continue;
 
-    srcPic := xcb_generate_id(conn);
-    xcb_render_create_picture(conn, srcPic, FWindowPixmap[idx].Pixmap,
-                              FormatForDepth(pixmapDepth), 0, nil);
-    xcb_render_set_picture_filter(conn, srcPic, 'good', 0, nil);
-
     // Aspect from the pixmap's recorded bounds, not the window's live geometry.
     r := FittedTileRect(i, FWindowPixmap[idx].Width, FWindowPixmap[idx].Height);
-    xcb_render_composite(conn, XCB_RENDER_PICT_OP_OVER, srcPic, 0, dstPic,
-                         0, 0, 0, 0, r.X, r.Y, r.W, r.H);
 
-    xcb_render_free_picture(conn, srcPic);
+    // Scales as it draws. The helper sets the source transform, which is the only thing
+    // that makes this a scale rather than a crop.
+    XcbRenderCompositeScaled(conn,
+      FWindowPixmap[idx].Pixmap, pixmapDepth,
+      FWindowPixmap[idx].Width, FWindowPixmap[idx].Height,
+      sheet, dstFormat, r.X, r.Y, r.W, r.H, XCB_RENDER_PICT_OP_OVER);
   end;
 
-  FPreviewSheet := SheetToImage(conn, sheet, sheetW, sheetH);   // one readback
+  // One readback for the whole sheet, not one per window.
+  FPreviewSheet := XcbRenderPixmapToImage(conn, sheet, sheetW, sheetH, False);
 
-  xcb_render_free_picture(conn, dstPic);
+  XcbRenderFreePicture(conn, dstPic);
   xcb_free_pixmap(conn, sheet);
 ```
+
+All four helpers come from `Floria.XCB.Render.Pictures` (§7.6). The one that matters is
+`XcbRenderCompositeScaled`: `xcb_render_composite` by itself copies a `width x height`
+window of the source at 1:1, so a naive call crops the window's top-left corner instead of
+shrinking the whole thing.
 
 No naming, no error handling for dead windows: the pixmap is created and freed on the
 dock's own schedule, and a pixmap the dock owns stays valid even if its window dies
@@ -458,23 +463,54 @@ the dock has re-named, and the two then disagree; reading past the pixmap's real
 the `BadMatch` in that row. The recorded size is always inside the pixmap, the live
 geometry is not.
 
-### 7.6 Missing Bindings
+### 7.6 Missing Bindings — `☑` done
 
-`floria.xcb.render.pas` does not bind the four calls the pipeline needs. The generator
-skipped them because their return type, `xcb_void_cookie_t`, comes from a filtered-out
-header (see the `skipped` comments at `floria.xcb.render.pas:878-884`):
+`floria.xcb.render.pas` is generated and the generator skipped every request whose return
+type is `xcb_void_cookie_t` (see its `skipped` comments). That turned out to be **seven**
+calls, not the four this note first listed:
 
 - `xcb_render_create_picture`
 - `xcb_render_free_picture`
 - `xcb_render_composite`
 - `xcb_render_set_picture_filter`
+- `xcb_render_set_picture_transform`
+- `xcb_render_fill_rectangles`
+- `xcb_render_set_picture_repeat`
 
-`xcb_void_cookie_t` is already declared and used in `floria.xcb.composite.pas:60`, so this
-is four hand-written declarations plus a `FormatForDepth` helper over
-`xcb_render_query_pict_formats`, which the compositor already calls. No existing caller
-changes.
+The last one does not exist in this libxcb-render at all, so the repeat mode is set
+through `xcb_render_create_picture`'s value list instead. Repeat `PAD` matters: without
+it, edge pixels sample outside the source and every preview gets a dark fringe.
 
-`xcb_composite_name_window_pixmap` is already bound, in `floria.xcb.composite.pas`.
+They live in a hand-written unit, `florialib/src/main/pascal/floria.xcb.render.pictures.pas`,
+rather than in the generated file, because the bindgen README forbids editing generated
+code. That unit also carries the two operations the pipeline needs:
+
+| Function | Purpose |
+| :--- | :--- |
+| `XcbRenderPictFormatForDepth` | the picture format for a drawable depth, cached per connection |
+| `XcbRenderFill` | solid fill of a picture rectangle |
+| `XcbRenderCompositeScaled` | scales one pixmap into a rectangle of another |
+| `XcbRenderPixmapToImage` | reads a pixmap back as a `TFloriaImage`, one round-trip |
+
+`xcb_render_composite` on its own does **not** scale. It copies a `width x height` window
+of the source at 1:1, so asking for a smaller destination crops instead of shrinking. The
+scale comes from setting the source picture's transform to `srcW/dstW, srcH/dstH`. This
+is the single most likely way to get this wrong, so the test is built to catch it: a 4x4
+source of four solid 2x2 quadrants scaled into 2x2 must produce four different colours,
+while a crop produces four red pixels.
+
+Two more things measured while testing:
+
+- **A 32-bit source must be premultiplied.** Filling it with `(1, 0, 0, 0)` — opaque red
+  at zero alpha — and compositing with `OVER` gives magenta, because the server treats the
+  colour channels as already multiplied by alpha and adds them regardless of coverage.
+  Real client pixmaps are premultiplied, so this is an artefact of a wrong test fixture,
+  but it is worth knowing when debugging a preview that looks washed out.
+- **The alpha fill-in on 24-bit readback is defensive, not observable.** This server
+  already returns an opaque unused byte, so removing the fill-in does not change any
+  pixel. It stays for servers that return zero, and the tests do not claim to cover it.
+
+`xcb_composite_name_window_pixmap` was already bound, in `floria.xcb.composite.pas`.
 
 ---
 
@@ -557,18 +593,24 @@ separately. It exits non-zero on the first difference, naming the behaviour that
 Verified: all ten checks pass; sabotaging the "live view" expectation and the "stale
 after resize" expectation each makes it fail, so the probe is not passing vacuously.
 
-### A2. Scale is correct and cheap
+### A2. Scale is correct and cheap — `☑` done
 
-A helper test in `florialib` with two assertions:
+`florialib/src/test/pascal/floria.xcb.render.pictures.test.pas`, five tests against the
+real X server:
 
-- **Scaling.** Composite a 4x4 pattern of distinct colours into a 2x2 box and assert the
-  four resulting colours. Proves the transform and the picture format without a WM.
-- **Alpha handling.** Composite a 32-bit source with a fully transparent pixel over a
-  filled destination, using `PictOpOver`, and assert the destination colour survives. Then
-  repeat with `PictOpSrc` and assert it does not. This is the assertion that keeps the
-  `Over`-onto-plate rule from silently regressing into `Src`.
+- **Scaling.** A 4x4 source of four solid 2x2 quadrants composited into 2x2 must produce
+  those four colours. A crop gives four red pixels instead, which is exactly what happens
+  if the source transform is omitted.
+- **Identity.** A 2x2 to 2x2 composite must be a copy, which catches a transform that is
+  off by the fixed-point scale.
+- **Operator.** A premultiplied 50% red source composited over blue must keep half the
+  blue with the default `OVER`, and lose it with `SRC`. This is what keeps the
+  `OVER`-onto-plate rule from silently regressing.
+- **Format lookup.** Depths 24 and 32 resolve to different, non-zero formats; an unused
+  depth resolves to nothing; the cache is stable.
 
-Sabotage check: swapping the operator in the first test must fail the second.
+Sabotage-verified: dropping the transform fails the scaling test, and changing the
+default operator to `SRC` fails the operator test.
 
 ### A3. Popup geometry
 
@@ -595,7 +637,7 @@ closes the popup; the popup never survives its owning application's last window.
 | # | Step | Status |
 | :--- | :--- | :--- |
 | 1 | Answer Q1 with A1 | `☑` measured, see §7.5 |
-| 2 | Bind the four render calls in `florialib`; add and test the scale helper (A2) | `☐` |
+| 2 | Bind the render calls in `florialib`; add and test the scale helper (A2) | `☑` see §7.6 |
 | 3 | Pixmap lifetime: hold per window, re-name on `MapNotify`/`ConfigureNotify`, free on `DestroyNotify` | `☐` |
 | 4 | Popup geometry, plate, sheet, paint, click-to-activate (A3, A4) | `☐` |
 | 5 | Dismissal, per Q3 (A5) | `☐` |
