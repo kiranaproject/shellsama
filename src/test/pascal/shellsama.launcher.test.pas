@@ -26,6 +26,8 @@ type
     procedure TestLauncherVirtualScrollOffset();
     procedure TestLauncherToggleAndVisibility();
     procedure TestLauncherAppIcons();
+    procedure TestLauncherCardAndShadowGeometry();
+    procedure TestLauncherShadowMarginDismissal();
   end;
 
 implementation
@@ -74,6 +76,7 @@ procedure TLauncherTest.TestLauncherInitialState();
 begin
   AssertNotNull('Launcher instance created', FLauncher);
   AssertFalse('Launcher should not be visible initially', FLauncher.IsVisible);
+  AssertNotNull('Background area exists', FLauncher.BackgroundArea);
   AssertEquals('Initial selected index is 0', 0, FLauncher.SelectedIndex);
   AssertEquals('Initial scroll offset is 0', 0, FLauncher.ScrollOffset);
   AssertTrue('Results count >= 0', FLauncher.ResultsCount >= 0);
@@ -203,6 +206,38 @@ begin
   // 5. Updating visible items should maintain valid state
   FLauncher.HandleSearchChanged('');
   AssertTrue('Results count > 0 after search reset', FLauncher.ResultsCount > 0);
+end;
+
+procedure TLauncherTest.TestLauncherCardAndShadowGeometry();
+begin
+  AssertNotNull('Launcher window exists', FLauncher.Window);
+  AssertNotNull('Launcher background area exists', FLauncher.BackgroundArea);
+  AssertEquals('Launcher total width includes shadow margin',
+    LAUNCHER_CARD_WIDTH + LAUNCHER_SHADOW_MARGIN * 2, FLauncher.Window.Width);
+  AssertEquals('Launcher total height includes shadow margin',
+    LAUNCHER_CARD_HEIGHT + LAUNCHER_SHADOW_MARGIN * 2, FLauncher.Window.Height);
+  AssertEquals('Background area width matches window',
+    FLauncher.Window.Width, FLauncher.BackgroundArea.Width);
+  AssertEquals('Background area height matches window',
+    FLauncher.Window.Height, FLauncher.BackgroundArea.Height);
+end;
+
+procedure TLauncherTest.TestLauncherShadowMarginDismissal();
+begin
+  FLauncher.Show();
+  AssertTrue('Launcher should be visible', FLauncher.IsVisible);
+
+  // Click inside the card plate (CARD_X + 10, CARD_Y + 10) on BackgroundArea
+  // Should NOT dismiss the launcher
+  if Assigned(FLauncher.BackgroundArea.OnMouseDown) then
+    FLauncher.BackgroundArea.OnMouseDown(FLauncher.BackgroundArea, CARD_X + 10, CARD_Y + 10, 1);
+  AssertTrue('Launcher stays visible on click inside card', FLauncher.IsVisible);
+
+  // Click in top-left shadow margin (CARD_X - 5, CARD_Y - 5)
+  // Should dismiss the launcher
+  if Assigned(FLauncher.BackgroundArea.OnMouseDown) then
+    FLauncher.BackgroundArea.OnMouseDown(FLauncher.BackgroundArea, CARD_X - 5, CARD_Y - 5, 1);
+  AssertFalse('Launcher dismissed on click in shadow margin', FLauncher.IsVisible);
 end;
 
 initialization

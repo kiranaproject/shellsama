@@ -32,8 +32,24 @@ uses
   ShellSama.DesktopApps;
 
 const
-  LAUNCHER_WIDTH        = 640;
-  LAUNCHER_HEIGHT       = 460;
+  // Card dimensions (the floating application browser plate)
+  LAUNCHER_CARD_WIDTH    = 640;
+  LAUNCHER_CARD_HEIGHT   = 460;
+  LAUNCHER_CARD_RADIUS   = 16.0;
+
+  // Shadow padding around the card plate
+  LAUNCHER_SHADOW_MARGIN   = 24;
+  LAUNCHER_SHADOW_BLUR     = 24.0;
+  LAUNCHER_SHADOW_OFFSET_Y = 6.0;
+
+  // Total window dimensions (card + shadow margin on all 4 sides)
+  LAUNCHER_WIDTH        = LAUNCHER_CARD_WIDTH + LAUNCHER_SHADOW_MARGIN * 2;
+  LAUNCHER_HEIGHT       = LAUNCHER_CARD_HEIGHT + LAUNCHER_SHADOW_MARGIN * 2;
+
+  // Inward offset of card plate within the window
+  CARD_X                = LAUNCHER_SHADOW_MARGIN;
+  CARD_Y                = LAUNCHER_SHADOW_MARGIN;
+
   // Rows visible in the list viewport, used by page navigation.
   LAUNCHER_VISIBLE_ITEMS = 10;
   LAUNCHER_ITEM_HEIGHT  = 36;   // row pitch
@@ -62,6 +78,7 @@ type
   TShellLauncher = class
   private
     FWindow          : TFtWindow;
+    FBackgroundArea  : TFtDrawingArea;
     FSearchEntry     : TFtEntry;
     FListArea        : TFtDrawingArea;
     FAppList         : TDesktopAppList;
@@ -115,7 +132,11 @@ type
     procedure AnimateScrollTo(ATarget: Double);
     procedure UpdateScrollAnimation();
 
-    // Painting
+    // Painting & input
+    procedure HandleBackgroundPaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandleBackgroundMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer);
+    procedure HandleDismiss(Sender: TFtWindow);
+
     procedure HandleListPaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
     procedure HandleListWheel(Sender: TFtDrawingArea; X, Y, DeltaX, DeltaY: Integer);
     procedure HandleListMouseMove(Sender: TFtDrawingArea; X, Y: Integer);
@@ -153,6 +174,7 @@ type
     function GetOrLoadAppIcon(const AIconName: string; const APreferredSize: Integer = 20): TFtBitmap;
 
     property Window        : TFtWindow        read FWindow;
+    property BackgroundArea: TFtDrawingArea   read FBackgroundArea;
     property SearchEntry   : TFtEntry         read FSearchEntry;
     property ListArea      : TFtDrawingArea   read FListArea;
     property AppList       : TDesktopAppList  read FAppList;
@@ -266,6 +288,7 @@ begin
   FSmallFont.Free();
   FListArea.Free();
   FSearchEntry.Free();
+  FBackgroundArea.Free();
   FWindow.Free();
   FAppList.Free();
   inherited Destroy();
@@ -281,25 +304,33 @@ begin
   FWindow.Borderless := True;
   FWindow.SkipTaskbar := True;
   FWindow.WindowType := ftwtUtility;
+  FWindow.Style := 'background-color: transparent;';
+  FWindow.BackgroundOpacity := 0.0;
+  FWindow.OnPopupDismiss := @HandleDismiss;
 
   screenWidth := FtApp().ScreenWidth;
   screenHeight := FtApp().ScreenHeight;
   FWindow.SetPosition(
-    Max(0, (screenWidth - LAUNCHER_WIDTH) div 2),
-    Max(0, (screenHeight - LAUNCHER_HEIGHT) div 2)
+    Max(0, (screenWidth - LAUNCHER_CARD_WIDTH) div 2 - LAUNCHER_SHADOW_MARGIN),
+    Max(0, (screenHeight - LAUNCHER_CARD_HEIGHT) div 2 - LAUNCHER_SHADOW_MARGIN)
   );
 
-  FSearchEntry := TFtEntry.Create(FWindow, SEARCH_X, SEARCH_Y,
-    LAUNCHER_WIDTH - SEARCH_X * 2, SEARCH_H, '');
+  FBackgroundArea := TFtDrawingArea.Create(FWindow, 0, 0, LAUNCHER_WIDTH, LAUNCHER_HEIGHT);
+  FBackgroundArea.Cursor := ftcDefault;
+  FBackgroundArea.OnPaint := @HandleBackgroundPaint;
+  FBackgroundArea.OnMouseDown := @HandleBackgroundMouseDown;
+
+  FSearchEntry := TFtEntry.Create(FWindow, CARD_X + SEARCH_X, CARD_Y + SEARCH_Y,
+    LAUNCHER_CARD_WIDTH - SEARCH_X * 2, SEARCH_H, '');
   FSearchEntry.Placeholder := 'Search applications';
   FSearchEntry.CornerRadius := 8.0;
   FSearchEntry.OnChange := @HandleSearchEntryChange;
   FSearchEntry.OnSubmit := @HandleSearchEntrySubmit;
 
   FListArea := TFtDrawingArea.Create(FWindow,
-    SEARCH_X, LIST_TOP,
-    LAUNCHER_WIDTH - SEARCH_X * 2,
-    LAUNCHER_HEIGHT - LIST_TOP - LIST_BOTTOM);
+    CARD_X + SEARCH_X, CARD_Y + LIST_TOP,
+    LAUNCHER_CARD_WIDTH - SEARCH_X * 2,
+    LAUNCHER_CARD_HEIGHT - LIST_TOP - LIST_BOTTOM);
   FListArea.ClipToBounds := True;
   FListArea.Cursor := ftcDefault;
   FListArea.OnPaint := @HandleListPaint;
@@ -320,14 +351,14 @@ end;
 // scrollbar gutter so the bar never overlaps the rows.
 function TShellLauncher.ListWidth(): Integer;
 begin
-  Result := LAUNCHER_WIDTH - SEARCH_X * 2;
+  Result := LAUNCHER_CARD_WIDTH - SEARCH_X * 2;
   if MaxScroll() > 0 then
     Result := Result - SCROLLBAR_W - SCROLLBAR_GAP;
 end;
 
 function TShellLauncher.ListHeight(): Integer;
 begin
-  Result := LAUNCHER_HEIGHT - LIST_TOP - LIST_BOTTOM;
+  Result := LAUNCHER_CARD_HEIGHT - LIST_TOP - LIST_BOTTOM;
 end;
 
 function TShellLauncher.MaxScroll(): Double;
@@ -453,16 +484,75 @@ end;
 // Paint
 // -----------------------------------------------------------------------------
 
+procedure TShellLauncher.HandleBackgroundPaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  isDark: Boolean;
+  cardX, cardY, cardW, cardH, cardRad, dividerY: Double;
+begin
+  if Canvas = nil then Exit;
+
+  cardX := CARD_X;
+  cardY := CARD_Y;
+  cardW := LAUNCHER_CARD_WIDTH;
+  cardH := LAUNCHER_CARD_HEIGHT;
+  cardRad := LAUNCHER_CARD_RADIUS;
+
+  isDark := FtApp().DarkMode;
+
+  if isDark then
+  begin
+    // Dark mode shadow: soft ambient drop shadow with vertical elevation
+    Canvas.DrawShadow(cardX, cardY, cardW, cardH, cardRad, 0.0, LAUNCHER_SHADOW_OFFSET_Y, LAUNCHER_SHADOW_BLUR, 0.0, 0.0, 0.0, 0.45);
+    // Dark mode frosted card plate
+    Canvas.DrawRoundedRect(cardX, cardY, cardW, cardH, cardRad, 24 / 255, 25 / 255, 38 / 255, 0.96);
+    // Dark mode card outline
+    Canvas.DrawRoundedRectOutline(cardX, cardY, cardW, cardH, cardRad, 1.2, 69 / 255, 71 / 255, 90 / 255, 0.70);
+    // Divider line between search bar and app list
+    dividerY := cardY + LIST_TOP - 8;
+    Canvas.DrawLine(cardX + 16, dividerY, cardX + cardW - 16, dividerY, 1.0, 49 / 255, 50 / 255, 68 / 255, 0.80);
+  end
+  else
+  begin
+    // Light mode shadow: natural drop shadow matching desktop elevation
+    Canvas.DrawShadow(cardX, cardY, cardW, cardH, cardRad, 0.0, LAUNCHER_SHADOW_OFFSET_Y, LAUNCHER_SHADOW_BLUR, 0.0, 0.0, 0.0, 0.22);
+    // Light mode plate: crisp surface matching shellsama topbar
+    Canvas.DrawRoundedRect(cardX, cardY, cardW, cardH, cardRad, 248 / 255, 250 / 255, 252 / 255, 0.98);
+    // Light mode card outline matching shellsama dividers (#CBD5E1)
+    Canvas.DrawRoundedRectOutline(cardX, cardY, cardW, cardH, cardRad, 1.2, 203 / 255, 213 / 255, 225 / 255, 0.90);
+    // Divider line between search bar and app list (#E2E8F0)
+    dividerY := cardY + LIST_TOP - 8;
+    Canvas.DrawLine(cardX + 16, dividerY, cardX + cardW - 16, dividerY, 1.0, 226 / 255, 232 / 255, 240 / 255, 1.0);
+  end;
+end;
+
+procedure TShellLauncher.HandleBackgroundMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer);
+begin
+  if Button <> 1 then Exit;
+  // Clicking outside the card plate into the transparent shadow margin dismisses the launcher
+  if (X < CARD_X) or (X >= CARD_X + LAUNCHER_CARD_WIDTH) or
+     (Y < CARD_Y) or (Y >= CARD_Y + LAUNCHER_CARD_HEIGHT) then
+  begin
+    Hide();
+  end;
+end;
+
+procedure TShellLauncher.HandleDismiss(Sender: TFtWindow);
+begin
+  Hide();
+end;
+
 procedure TShellLauncher.HandleListPaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
 const
-  BG          : array[0..2] of Double = (1.00, 1.00, 1.00);
-  ROW_SEL     : array[0..2] of Double = (0.20, 0.47, 0.96);
-  ROW_HOVER   : array[0..2] of Double = (0.92, 0.94, 0.98);
-  TEXT        : array[0..2] of Double = (0.11, 0.13, 0.18);
-  TEXT_SEL    : array[0..2] of Double = (1.00, 1.00, 1.00);
-  TEXT_DIM    : array[0..2] of Double = (0.45, 0.48, 0.55);
-  TRACK       : array[0..2] of Double = (0.00, 0.00, 0.00);
-  THUMB       : array[0..2] of Double = (0.45, 0.48, 0.55);
+  ROW_SEL        : array[0..2] of Double = (0.20, 0.47, 0.96);
+  ROW_HOVER_LIGHT: array[0..2] of Double = (0.93, 0.95, 0.98);
+  ROW_HOVER_DARK : array[0..2] of Double = (0.19, 0.20, 0.27);
+  TEXT_LIGHT     : array[0..2] of Double = (0.11, 0.13, 0.18);
+  TEXT_DARK      : array[0..2] of Double = (0.85, 0.88, 0.95);
+  TEXT_SEL       : array[0..2] of Double = (1.00, 1.00, 1.00);
+  TEXT_DIM_LIGHT : array[0..2] of Double = (0.45, 0.48, 0.55);
+  TEXT_DIM_DARK  : array[0..2] of Double = (0.60, 0.64, 0.75);
+  TRACK          : array[0..2] of Double = (0.00, 0.00, 0.00);
+  THUMB          : array[0..2] of Double = (0.45, 0.48, 0.55);
 var
   w, h, i, idx, rowY: Integer;
   firstRow: Integer;
@@ -471,6 +561,8 @@ var
   rowW: Integer;
   ox, oy: Integer;
   emptyMsg: string;
+  isDark: Boolean;
+  curText, curDim, curHover: array[0..2] of Double;
 begin
   w := Sender.Width;
   h := Sender.Height;
@@ -484,14 +576,27 @@ begin
   ox := Sender.X;
   oy := Sender.Y;
 
-  Canvas.DrawRect(ox, oy, w, h, BG[0], BG[1], BG[2], 1.0);
+  isDark := FtApp().DarkMode;
+  if isDark then
+  begin
+    curText := TEXT_DARK;
+    curDim := TEXT_DIM_DARK;
+    curHover := ROW_HOVER_DARK;
+  end
+  else
+  begin
+    curText := TEXT_LIGHT;
+    curDim := TEXT_DIM_LIGHT;
+    curHover := ROW_HOVER_LIGHT;
+  end;
+
   rowW := ListWidth();
 
   if Length(FCurrentResults) = 0 then
   begin
     emptyMsg := 'No applications found';
     Canvas.DrawTextCentered(ox, oy + h div 2 - 10, w, 20, emptyMsg,
-      TEXT_DIM[0], TEXT_DIM[1], TEXT_DIM[2], FRowFont.Handle);
+      curDim[0], curDim[1], curDim[2], FRowFont.Handle);
     Exit;
   end;
 
@@ -511,7 +616,7 @@ begin
     end
     else if idx = FHoverIndex then
       Canvas.DrawRoundedRect(ox, oy + rowY, rowW, LAUNCHER_ITEM_HEIGHT - LAUNCHER_ITEM_GAP,
-        8.0, ROW_HOVER[0], ROW_HOVER[1], ROW_HOVER[2], 1.0);
+        8.0, curHover[0], curHover[1], curHover[2], 1.0);
 
     appIcon := GetOrLoadAppIcon(FCurrentResults[idx].Icon, 20);
     if Assigned(appIcon) then
@@ -522,7 +627,7 @@ begin
         FCurrentResults[idx].Name, TEXT_SEL[0], TEXT_SEL[1], TEXT_SEL[2], FRowFont.Handle)
     else
       Canvas.DrawTextLeft(ox + 38, oy + rowY, rowW - 48, LAUNCHER_ITEM_HEIGHT - LAUNCHER_ITEM_GAP,
-        FCurrentResults[idx].Name, TEXT[0], TEXT[1], TEXT[2], FRowFont.Handle);
+        FCurrentResults[idx].Name, curText[0], curText[1], curText[2], FRowFont.Handle);
   end;
 
   // Scrollbar: a translucent track with a proportional thumb, drawn only when the
@@ -694,6 +799,8 @@ begin
   FScrollAnimating := False;
   SetScrollPos(0);
   UpdateVisibleItems();
+  if Assigned(FBackgroundArea) then
+    FBackgroundArea.Invalidate();
   if Assigned(FWindow) then
     FWindow.Invalidate();
 end;
@@ -828,6 +935,12 @@ begin
   FVisible := True;
   FWindow.Show();
 
+  if Assigned(FBackgroundArea) then
+  begin
+    FBackgroundArea.Show();
+    FBackgroundArea.Invalidate();
+  end;
+
   // Map the list before invalidating it, so its own Visible flag is set and the
   // invalidation is not discarded.
   if Assigned(FListArea) then
@@ -837,7 +950,7 @@ begin
   end;
 
   FWindow.BringToFront();
-  FWindow.GrabInput();
+  FWindow.GrabPopupInput();
   if Assigned(FSearchEntry) then
     FSearchEntry.SetFocus();
   FWindow.Invalidate();
@@ -944,6 +1057,7 @@ var
   evType: Byte;
   keyEv: Pxcb_key_press_event_t;
   isSuper: Boolean;
+  sym: xcb_keysym_t;
 begin
   Result := False;
   if Event = nil then Exit;
@@ -956,7 +1070,47 @@ begin
         keyEv := Pxcb_key_press_event_t(Event);
         isSuper := (keyEv^.detail = FSuperKeycodeL) or (keyEv^.detail = FSuperKeycodeR);
 
-        if isSuper and not FVisible then
+        if FVisible then
+        begin
+          if isSuper then
+          begin
+            Hide();
+            Exit(True);
+          end;
+
+          if Assigned(FKeySymbols) then
+          begin
+            sym := xcb_key_symbols_get_keysym(FKeySymbols, keyEv^.detail, 0);
+            case sym of
+              XK_Escape:
+                begin
+                  Hide();
+                  Exit(True);
+                end;
+              XK_Up:
+                begin
+                  SelectPrev();
+                  Exit(True);
+                end;
+              XK_Down:
+                begin
+                  SelectNext();
+                  Exit(True);
+                end;
+              XK_Page_Up:
+                begin
+                  SelectPageUp();
+                  Exit(True);
+                end;
+              XK_Page_Down:
+                begin
+                  SelectPageDown();
+                  Exit(True);
+                end;
+            end;
+          end;
+        end
+        else if isSuper then
         begin
           // Grab on press, show on release: standard launcher behaviour, and it
           // avoids opening and immediately closing when Super is used in a combo.
