@@ -79,19 +79,15 @@ begin
   sw := FtApp().ScreenWidth;
   sh := FtApp().ScreenHeight;
 
-  // 66 tall, sitting 3px above the bottom edge, horizontally centred. The taskbar it
-  // replaces is a 38px full-width strip flush with the bottom, so these are the
-  // numbers that distinguish the two modes.
-  //
-  // 8 top padding + 48 icon + 2 gap + 6 dot + 2 bottom padding, plus the one row the
-  // rounded background spends on its bottom antialiased edge. Both gaps are
-  // deliberately tight: the dot belongs to the icon, so a wide margin reads as dead
-  // space inside the plate.
-  AssertEquals('Dock height', 66, FDock.PanelHeight());
-  AssertEquals('Dock bottom margin', sh - 66 - 3, FDock.PanelY());
-  AssertEquals('Dock strut bottom reserves height plus margins', 66 + 3 + 3, FDock.ComputeStrutBottom());
+  // 60 tall, sitting 3px above the bottom edge, horizontally centred.
+  // Symmetrical 6px vertical margins: 6px top margin + 48px icon + 6px bottom margin = 60px.
+  // Running indicator dot (4px diameter) is centered vertically in the 6px bottom margin.
+  AssertEquals('Dock height', 60, FDock.PanelHeight());
+  AssertEquals('Dock bottom margin', sh - 60 - 3, FDock.PanelY());
+  AssertEquals('Dock strut bottom reserves height plus margins', 60 + 3 + 3, FDock.ComputeStrutBottom());
   AssertEquals('Dock is centred', (sw - FDock.PanelWidth()) div 2, FDock.PanelX());
   AssertEquals('Dock X is not the taskbar X', False, FDock.PanelX() = 0);
+  AssertEquals('Icon vertical margins are symmetrical', 6, (FDock.PanelHeight() - FDock.IconSize) div 2);
 end;
 
 procedure TDockTest.TestDockIsATaskSurface();
@@ -160,13 +156,13 @@ begin
   FDock.WindowWidget.Title := marker;
 
   // A width change of the kind a task appearing causes.
-  FDock.ResizeWindow(beforeW + 54, 66, 100);
+  FDock.ResizeWindow(beforeW + 54, 60, 100);
 
   AssertNotNull('Dock window still exists', FDock.WindowWidget);
   AssertEquals('the same window survived the resize: title kept',
                marker, FDock.WindowWidget.Title);
   AssertEquals('panel width followed the resize', beforeW + 54, FDock.PanelWidth());
-  AssertEquals('panel height unchanged', 66, FDock.PanelHeight());
+  AssertEquals('panel height unchanged', 60, FDock.PanelHeight());
 
   // Put the title back so the rest of the suite sees a normal dock.
   FDock.WindowWidget.Title := 'shellsama-dock';

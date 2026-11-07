@@ -166,15 +166,13 @@ const
   DOCK_PADDING       = 10;
   DOCK_GAP           = 6;
   DOCK_MAX_WIDTH     = 720;
-  // 8 top + 48 icon + 2 gap + 6 dot + 2 bottom padding.
-  //
-  // Derived from the measured rows rather than trusted: inside the plate the icon box
-  // ends at row 55 (8 + 48 - 1), so the dot must start at 58 and end at 63, and the
-  // plate must end at 65. 66 rows total.
-  DOCK_HEIGHT        = 66;
+  // 6 top + 48 icon + 6 bottom margin: symmetrical 6px vertical margins.
+  // Running window indicator dot (diameter 4px) is centered vertically in the
+  // 6px bottom margin between icon bottom (54) and dock plate bottom (60).
+  DOCK_HEIGHT        = 60;
   DOCK_BOTTOM_MARGIN = 3;
   DOCK_TOP_MARGIN    = 3;
-  DOT_SIZE           = 6;
+  DOT_SIZE           = 4;
 
 // Only declarations the window paint path honours: a background colour and a border
 // radius. The radius leaves the corners unpainted, so they show the desktop through
@@ -593,9 +591,10 @@ begin
 
   focused := GActiveDock.EntryFocused(idx);
   // AX/AY are the button's position in WINDOW coordinates, not offsets inside it, so
-  // the dot is placed relative to the button's own rectangle.
+  // the dot is placed relative to the button's own rectangle, centered in the margin
+  // between the icon's bottom edge and the dock's bottom edge.
   cxp := AX + (AW / 2);
-  cyp := AY + AH + 3;
+  cyp := (AY + AH) + ((DOCK_HEIGHT - (AY + AH)) / 2.0);
   radius := DOT_SIZE / 2;
 
   cv := TFtCanvas.Create(ACanvas);
@@ -629,7 +628,7 @@ begin
   if wantW <> FPanelWidth then
     ResizeWindow(wantW, DOCK_HEIGHT, (ScreenWidthHint() - wantW) div 2);
 
-  iconY := 8;
+  iconY := (DOCK_HEIGHT - FIconSize) div 2;
 
   if Length(FEntries) = 0 then
   begin
@@ -664,7 +663,7 @@ begin
   if (FMaxScroll = 0) and (iconX < DOCK_PADDING) then
     iconX := DOCK_PADDING;
 
-  iconY := (DOCK_HEIGHT - btnSize) div 2 - 3;
+  iconY := (DOCK_HEIGHT - btnSize) div 2;
   FLayoutIconSize := btnSize;
   FLayoutIconX := iconX;
 
