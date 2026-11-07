@@ -487,7 +487,8 @@ begin
 
     QueryWindowClass(win, resName, resClass);
     key := FDockApps.AppKeyForWindow(resName, resClass);
-    if key = '' then Continue;
+    if key = '' then
+      key := 'window-' + IntToStr(win);
 
     j := IndexOfKey(key);
     if j < 0 then

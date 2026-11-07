@@ -206,27 +206,57 @@ end;
 function TShellDockApps.HasDesktopEntry(const AAppKey: string): Boolean;
 var
   app: TDesktopApp;
+  k: string;
 begin
   Result := AppForKey(AAppKey, app);
+  if not Result then
+  begin
+    k := LowerCase(AAppKey);
+    Result := (k = 'consolesama') or (k = 'consolesama.desktop') or
+              (k = 'filesama') or (k = 'filesama.desktop') or
+              (k = 'configsama') or (k = 'configsama.desktop');
+  end;
 end;
 
 function TShellDockApps.AppNameForKey(const AAppKey: string): string;
 var
   app: TDesktopApp;
+  k: string;
 begin
   if AppForKey(AAppKey, app) then
     Exit(app.Name);
-  // A bare class is at least readable.
-  Result := AAppKey;
+
+  k := LowerCase(AAppKey);
+  if (k = 'consolesama') or (k = 'consolesama.desktop') then
+    Result := 'Console'
+  else if (k = 'filesama') or (k = 'filesama.desktop') then
+    Result := 'Files'
+  else if (k = 'configsama') or (k = 'configsama.desktop') then
+    Result := 'Settings'
+  else
+  begin
+    Result := AAppKey;
+    if Length(Result) > 0 then
+      Result[1] := UpCase(Result[1]);
+  end;
 end;
 
 function TShellDockApps.AppIconForKey(const AAppKey: string): string;
 var
   app: TDesktopApp;
+  k: string;
 begin
   Result := '';
-  if AppForKey(AAppKey, app) then
-    Result := app.Icon;
+  if AppForKey(AAppKey, app) and (app.Icon <> '') then
+    Exit(app.Icon);
+
+  k := LowerCase(AAppKey);
+  if (k = 'consolesama') or (k = 'consolesama.desktop') then
+    Result := 'utilities-terminal'
+  else if (k = 'filesama') or (k = 'filesama.desktop') then
+    Result := 'system-file-manager'
+  else if (k = 'configsama') or (k = 'configsama.desktop') then
+    Result := 'preferences-system';
 end;
 
 function TShellDockApps.PinnedCount(): Integer;
@@ -275,11 +305,24 @@ end;
 function TShellDockApps.Launch(const AAppKey: string): Boolean;
 var
   app: TDesktopApp;
-  cmd: string;
+  cmd, k: string;
 begin
   Result := False;
-  if not AppForKey(AAppKey, app) then Exit;
-  cmd := app.Exec;
+  cmd := '';
+  if AppForKey(AAppKey, app) then
+    cmd := app.Exec;
+
+  if cmd = '' then
+  begin
+    k := LowerCase(AAppKey);
+    if (k = 'consolesama') or (k = 'consolesama.desktop') then
+      cmd := 'consolesama'
+    else if (k = 'filesama') or (k = 'filesama.desktop') then
+      cmd := 'filesama'
+    else if (k = 'configsama') or (k = 'configsama.desktop') then
+      cmd := 'configsama';
+  end;
+
   if cmd = '' then Exit;
 
   // Detached, with stdio closed: the dock must not block on a child or inherit its

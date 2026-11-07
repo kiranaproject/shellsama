@@ -90,6 +90,7 @@ type
     FAtomWMChangeState        : Cardinal;
     FAtomWMName               : Cardinal;
     FAtomWMClass              : Cardinal;
+    FAtomNetWmPid             : Cardinal;
 
     // Window icon cache
     FWindowIconCache          : array of TWindowIconItem;
@@ -106,6 +107,7 @@ type
     function QueryClientList(): TWindowIdArray;
     function QueryActiveWindow(): Cardinal;
     function QueryWindowTitle(AWin: Cardinal): string;
+    function QueryWindowPid(AWin: Cardinal): Cardinal;
     // WM_CLASS for a window, as (instance, class). Empty strings when absent. Used to
     // decide which application a window belongs to.
     procedure QueryWindowClass(AWin: Cardinal; out AResName, AResClass: string);
@@ -538,6 +540,7 @@ begin
   FAtomWMChangeState         := InternAtom(FConn, 'WM_CHANGE_STATE');
   FAtomWMName                := InternAtom(FConn, 'WM_NAME');
   FAtomWMClass               := InternAtom(FConn, 'WM_CLASS');
+  FAtomNetWmPid              := InternAtom(FConn, '_NET_WM_PID');
 end;
 
 function TShellTaskSurface.TopInset(): Integer;
@@ -753,32 +756,115 @@ begin
   end;
 end;
 
+function TShellTaskSurface.QueryWindowPid(AWin: Cardinal): Cardinal;
+var
+  cookie: xcb_get_property_cookie_t;
+  reply: Pxcb_get_property_reply_t;
+begin
+  Result := 0;
+  if (FConn = nil) or (AWin = 0) or (FAtomNetWmPid = 0) then Exit;
+
+  cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmPid, XCB_ATOM_CARDINAL, 0, 1);
+  reply := xcb_get_property_reply(FConn, cookie, nil);
+  if reply = nil then Exit;
+
+  try
+    if xcb_get_property_value_length(reply) >= SizeOf(Cardinal) then
+      Result := PCardinal(xcb_get_property_value(reply))^;
+  finally
+    c_free(reply);
+  end;
+end;
+
 procedure TShellTaskSurface.QueryWindowClass(AWin: Cardinal; out AResName, AResClass: string);
 var
   cookie: xcb_get_property_cookie_t;
   reply: Pxcb_get_property_reply_t;
   len: Integer;
   pStr, pNext: PChar;
+  pid: Cardinal;
+  procFile: TextFile;
+  commLine, titleStr: string;
 begin
   AResName := '';
   AResClass := '';
-  if (FConn = nil) or (AWin = 0) or (FAtomWMClass = 0) then Exit;
+  if (FConn = nil) or (AWin = 0) then Exit;
 
-  cookie := xcb_get_property(FConn, 0, AWin, FAtomWMClass, XCB_ATOM_STRING, 0, 128);
-  reply := xcb_get_property_reply(FConn, cookie, nil);
-  if reply = nil then Exit;
+  if FAtomWMClass <> 0 then
+  begin
+    cookie := xcb_get_property(FConn, 0, AWin, FAtomWMClass, XCB_ATOM_STRING, 0, 128);
+    reply := xcb_get_property_reply(FConn, cookie, nil);
+    if reply <> nil then
+    begin
+      try
+        len := xcb_get_property_value_length(reply);
+        if len > 0 then
+        begin
+          pStr := PChar(xcb_get_property_value(reply));
+          // WM_CLASS is two NUL-terminated strings: instance, then class.
+          AResName := StrPas(pStr);
+          pNext := pStr + Length(AResName) + 1;
+          if (pNext - pStr) < len then
+            AResClass := StrPas(pNext);
+        end;
+      finally
+        c_free(reply);
+      end;
+    end;
+  end;
 
-  try
-    len := xcb_get_property_value_length(reply);
-    if len <= 0 then Exit;
-    pStr := PChar(xcb_get_property_value(reply));
-    // WM_CLASS is two NUL-terminated strings: instance, then class.
-    AResName := StrPas(pStr);
-    pNext := pStr + Length(AResName) + 1;
-    if (pNext - pStr) < len then
-      AResClass := StrPas(pNext);
-  finally
-    c_free(reply);
+  // Fallback 1: Query process PID from _NET_WM_PID and read /proc/<pid>/comm
+  if (AResName = '') and (AResClass = '') then
+  begin
+    pid := QueryWindowPid(AWin);
+    if pid > 0 then
+    begin
+      if FileExists('/proc/' + IntToStr(pid) + '/comm') then
+      begin
+        try
+          AssignFile(procFile, '/proc/' + IntToStr(pid) + '/comm');
+          Reset(procFile);
+          if not Eof(procFile) then
+            ReadLn(procFile, commLine);
+          CloseFile(procFile);
+          commLine := Trim(commLine);
+          if commLine <> '' then
+          begin
+            AResName := LowerCase(commLine);
+            AResClass := commLine;
+            if Length(AResClass) > 0 then
+              AResClass[1] := UpCase(AResClass[1]);
+          end;
+        except
+        end;
+      end;
+    end;
+  end;
+
+  // Fallback 2: Infer identity from window title
+  if (AResName = '') and (AResClass = '') then
+  begin
+    titleStr := QueryWindowTitle(AWin);
+    if titleStr <> '' then
+    begin
+      if Pos(' — ', titleStr) > 0 then
+        titleStr := Copy(titleStr, Pos(' — ', titleStr) + 4, Length(titleStr))
+      else if Pos(' - ', titleStr) > 0 then
+        titleStr := Copy(titleStr, Pos(' - ', titleStr) + 3, Length(titleStr));
+      titleStr := Trim(titleStr);
+      if titleStr <> '' then
+      begin
+        AResName := LowerCase(StringReplace(titleStr, ' ', '', [rfReplaceAll]));
+        AResClass := titleStr;
+      end;
+    end;
+  end;
+
+  // Fallback 3: Unique window identifier
+  if (AResName = '') and (AResClass = '') then
+  begin
+    AResName := 'window-' + IntToStr(AWin);
+    AResClass := 'Window';
   end;
 end;
 
@@ -943,55 +1029,53 @@ begin
   end;
 
   // 2. Try WM_CLASS match to desktop apps / pixmaps
-  if (FConn <> nil) and (AWin <> 0) then
+  if (Result = nil) and (AWin <> 0) then
   begin
-    cookie := xcb_get_property(FConn, 0, AWin, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 0, 256);
-    reply := xcb_get_property_reply(FConn, cookie, nil);
-    if reply <> nil then
+    QueryWindowClass(AWin, resName, resClass);
+    if (resName <> '') or (resClass <> '') then
     begin
-      try
-        strLen := xcb_get_property_value_length(reply);
-        if strLen > 0 then
+      // A. Match against TDesktopAppList
+      if Assigned(FLauncher) and Assigned(FLauncher.AppList) then
+      begin
+        if FLauncher.AppList.FindAppByClass(resName, resClass, desktopApp) then
         begin
-          pStr := PChar(xcb_get_property_value(reply));
-          resName := StrPas(pStr);
-          resClass := '';
-          pNext := pStr + Length(resName) + 1;
-          if (pNext - pStr) < strLen then
-            resClass := StrPas(pNext);
-
-          // A. Match against TDesktopAppList
-          if Assigned(FLauncher) and Assigned(FLauncher.AppList) then
+          if desktopApp.Icon <> '' then
           begin
-            if FLauncher.AppList.FindAppByClass(resName, resClass, desktopApp) then
-            begin
-              if desktopApp.Icon <> '' then
-              begin
-                iconPath := ResolveIconPath(desktopApp.Icon, APreferredSize);
-                if iconPath <> '' then
-                  Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
-              end;
-            end;
-          end;
-
-          // B. Direct name resolution from resName
-          if (Result = nil) and (resName <> '') then
-          begin
-            iconPath := ResolveIconPath(LowerCase(resName), APreferredSize);
-            if iconPath <> '' then
-              Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
-          end;
-
-          // C. Direct name resolution from resClass
-          if (Result = nil) and (resClass <> '') then
-          begin
-            iconPath := ResolveIconPath(LowerCase(resClass), APreferredSize);
+            iconPath := ResolveIconPath(desktopApp.Icon, APreferredSize);
             if iconPath <> '' then
               Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
           end;
         end;
-      finally
-        c_free(reply);
+      end;
+
+      // B. Direct name resolution from resName
+      if (Result = nil) and (resName <> '') then
+      begin
+        iconPath := ResolveIconPath(LowerCase(resName), APreferredSize);
+        if iconPath <> '' then
+          Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
+      end;
+
+      // C. Direct name resolution from resClass
+      if (Result = nil) and (resClass <> '') then
+      begin
+        iconPath := ResolveIconPath(LowerCase(resClass), APreferredSize);
+        if iconPath <> '' then
+          Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
+      end;
+
+      // D. Known desktop alias mapping
+      if Result = nil then
+      begin
+        if (LowerCase(resName) = 'consolesama') or (LowerCase(resClass) = 'consolesama') then
+          iconPath := ResolveIconPath('utilities-terminal', APreferredSize)
+        else if (LowerCase(resName) = 'filesama') or (LowerCase(resClass) = 'filesama') then
+          iconPath := ResolveIconPath('system-file-manager', APreferredSize)
+        else if (LowerCase(resName) = 'configsama') or (LowerCase(resClass) = 'configsama') then
+          iconPath := ResolveIconPath('preferences-system', APreferredSize);
+
+        if iconPath <> '' then
+          Result := LoadIconBitmap(iconPath, APreferredSize, APreferredSize);
       end;
     end;
   end;
