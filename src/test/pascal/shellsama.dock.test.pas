@@ -89,7 +89,7 @@ begin
   // space inside the plate.
   AssertEquals('Dock height', 66, FDock.PanelHeight());
   AssertEquals('Dock bottom margin', sh - 66 - 3, FDock.PanelY());
-  AssertEquals('Dock strut bottom reserves height plus margin', 66 + 3, FDock.ComputeStrutBottom());
+  AssertEquals('Dock strut bottom reserves height plus margins', 66 + 3 + 2, FDock.ComputeStrutBottom());
   AssertEquals('Dock is centred', (sw - FDock.PanelWidth()) div 2, FDock.PanelX());
   AssertEquals('Dock X is not the taskbar X', False, FDock.PanelX() = 0);
 end;

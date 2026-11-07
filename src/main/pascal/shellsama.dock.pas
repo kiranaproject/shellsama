@@ -173,6 +173,7 @@ const
   // plate must end at 65. 66 rows total.
   DOCK_HEIGHT        = 66;
   DOCK_BOTTOM_MARGIN = 3;
+  DOCK_TOP_MARGIN    = 2;
   DOT_SIZE           = 6;
 
 // Only declarations the window paint path honours: a background colour and a border
@@ -313,7 +314,7 @@ end;
 
 function TShellDock.ComputeStrutBottom(): Integer;
 begin
-  Result := DOCK_HEIGHT + DOCK_BOTTOM_MARGIN;
+  Result := DOCK_HEIGHT + DOCK_BOTTOM_MARGIN + DOCK_TOP_MARGIN;
 end;
 
 // ---------------------------------------------------------------- model
