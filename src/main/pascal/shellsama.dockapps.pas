@@ -325,6 +325,8 @@ begin
 
   if cmd = '' then Exit;
 
+  cmd := ResolveCommandPath(cmd);
+
   // Detached, with stdio closed: the dock must not block on a child or inherit its
   // descriptors.
   libc_system(PChar('( ' + cmd + ' ) >/dev/null 2>&1 &'));

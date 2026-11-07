@@ -887,6 +887,8 @@ begin
   cmd := AApp.Exec;
   if cmd = '' then Exit;
 
+  cmd := ResolveCommandPath(cmd);
+
   // Run detached so the launcher is not blocked by the child, and so a terminal
   // app does not inherit this process's stdio.
   if libc_system(PChar('( ' + cmd + ' ) >/dev/null 2>&1 &')) <> 0 then

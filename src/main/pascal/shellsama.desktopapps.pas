@@ -81,6 +81,9 @@ function LoadIconBitmap(const APath: string; const AWidth, AHeight: Integer): TF
 // Creates a crisp default window/app fallback SVG bitmap
 function CreateFallbackIcon(const AWidth, AHeight: Integer): TFtBitmap;
 
+// Resolves a command name or command line to an absolute executable path
+function ResolveCommandPath(const ACmdLine: string): string;
+
 implementation
 
 uses
@@ -713,6 +716,68 @@ begin
   except
     Result := nil;
   end;
+end;
+
+function ResolveCommandPath(const ACmdLine: string): string;
+var
+  trimmed, binPart, argsPart, candidate, kiranaDir, homeDir: string;
+  spacePos: Integer;
+begin
+  trimmed := Trim(ACmdLine);
+  if trimmed = '' then Exit('');
+
+  spacePos := Pos(' ', trimmed);
+  if spacePos > 0 then
+  begin
+    binPart := Copy(trimmed, 1, spacePos - 1);
+    argsPart := Copy(trimmed, spacePos, Length(trimmed));
+  end
+  else
+  begin
+    binPart := trimmed;
+    argsPart := '';
+  end;
+
+  // 1. Direct path exists
+  if (Pos('/', binPart) > 0) and FileExists(binPart) then
+    Exit(trimmed);
+
+  // 2. Standard PATH lookup
+  candidate := FileSearch(binPart, GetEnvironmentVariable('PATH'));
+  if (candidate <> '') and FileExists(candidate) then
+    Exit(candidate + argsPart);
+
+  // 3. ~/.local/bin lookup
+  homeDir := GetEnvironmentVariable('HOME');
+  if homeDir <> '' then
+  begin
+    candidate := homeDir + '/.local/bin/' + binPart;
+    if FileExists(candidate) then
+      Exit(candidate + argsPart);
+  end;
+
+  // 4. Sibling project lookup relative to binary
+  if ParamStr(0) <> '' then
+  begin
+    kiranaDir := ExpandFileName(ExtractFilePath(ParamStr(0)) + '../../');
+    candidate := kiranaDir + '/' + binPart + '/target/' + binPart;
+    if FileExists(candidate) then
+      Exit(candidate + argsPart);
+
+    candidate := kiranaDir + '/' + binPart + '/' + binPart;
+    if FileExists(candidate) then
+      Exit(candidate + argsPart);
+
+    candidate := ExpandFileName(ExtractFilePath(ParamStr(0)) + '../' + binPart + '/' + binPart);
+    if FileExists(candidate) then
+      Exit(candidate + argsPart);
+
+    candidate := ExpandFileName(ExtractFilePath(ParamStr(0)) + binPart);
+    if FileExists(candidate) then
+      Exit(candidate + argsPart);
+  end;
+
+  Result := trimmed;
 end;
 
 initialization
