@@ -295,7 +295,7 @@ begin
   if Assigned(FTray) then
   begin
     trayW := FTray.Width;
-    trayX := (FPanelWidth - 218) - trayW;
+    trayX := (FPanelWidth - 260) - trayW;
     FTray.SetPosition(trayX, (FPanelHeight - FTray.IconSize) div 2);
   end;
 end;
@@ -458,18 +458,18 @@ begin
   FShowDesktopBtn.OnClick := @HandleShowDesktopButtonClick;
 
   // 3. Power / Session Applet (Shutdown button)
-  FSessionApplet := TShellSessionApplet.Create(FWindow, FPanelWidth - 70, 3, 32, 32);
+  FSessionApplet := TShellSessionApplet.Create(FWindow, FPanelWidth - 72, 3, 32, 32);
   FSessionApplet.Button.OnClick := @HandleSessionButtonClick;
   FSessionApplet.Button.OnHover := @HandleSessionButtonHover;
 
   // 4. Clock Applet (Date & Time + Calendar)
-  FClockApplet := TShellClockApplet.Create(FWindow, FPanelWidth - 170, 3, 96, 32);
+  FClockApplet := TShellClockApplet.Create(FWindow, FPanelWidth - 212, 3, 136, 32);
   FClockApplet.Button.OnClick := @HandleClockButtonClick;
   FClockApplet.Button.OnHover := @HandleClockButtonHover;
   FClockApplet.OnDismiss := @HandleAppletDismiss;
 
   // 5. Volume Applet
-  FVolumeApplet := TShellVolumeApplet.Create(FWindow, FPanelWidth - 210, 3, 36, 32);
+  FVolumeApplet := TShellVolumeApplet.Create(FWindow, FPanelWidth - 252, 3, 36, 32);
   FVolumeApplet.Button.OnClick := @HandleVolumeButtonClick;
   FVolumeApplet.Button.OnHover := @HandleVolumeButtonHover;
   FVolumeApplet.OnDismiss := @HandleAppletDismiss;

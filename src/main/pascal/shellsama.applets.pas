@@ -9,7 +9,7 @@ interface
 uses
   Classes, SysUtils, Math, Process, DateUtils,
   ftpas.api, ftpas.types, ftpas, ftpas.controls, ftpas.menus,
-  ftpas.canvas, ftpas.creative;
+  ftpas.canvas, ftpas.creative, ftpas.font;
 
 type
   TVolumeIconKind = (vikMuted, vikLow, vikMedium, vikHigh);
@@ -79,10 +79,18 @@ type
     FButton        : TFtButton;
     FPopupWindow   : TFtWindow;
     FPlate         : TFtDrawingArea;
+    FPrevBtn       : TFtButton;
+    FNextBtn       : TFtButton;
+    FClockFont     : TFtFontRef;
+    FViewYear      : Word;
+    FViewMonth     : Word;
     FLastClockSec  : Integer;
     FOnDismiss     : TNotifyEvent;
 
     procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandlePrevClick(Sender: TFtButton);
+    procedure HandleNextClick(Sender: TFtButton);
+    procedure HandlePlateMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer);
     procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
     procedure HandlePopupWindowDismiss(Sender: TFtWindow);
 
@@ -102,6 +110,8 @@ type
 
     property Button: TFtButton read FButton;
     property PopupWindow: TFtWindow read FPopupWindow;
+    property ViewYear: Word read FViewYear;
+    property ViewMonth: Word read FViewMonth;
     property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
   end;
 
@@ -553,8 +563,13 @@ begin
   FPanelWindow := AParentWindow;
   FLastClockSec := -1;
   FOnDismiss := nil;
+  FViewYear := 0;
+  FViewMonth := 0;
+  FPrevBtn := nil;
+  FNextBtn := nil;
+  FClockFont := TFtFontRef.Create('Sans:bold 18');
 
-  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '--:--:--');
+  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '--:--');
   FButton.Flat := True;
   FButton.IsToggle := True;
   FButton.CornerRadius := 6.0;
@@ -566,6 +581,11 @@ end;
 destructor TShellClockApplet.Destroy();
 begin
   DestroyPopupWindow();
+  if Assigned(FClockFont) then
+  begin
+    FClockFont.Free();
+    FClockFont := nil;
+  end;
   if Assigned(FButton) then
   begin
     FButton.Free();
@@ -583,67 +603,127 @@ end;
 procedure TShellClockApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
 var
   nowDt: TDateTime;
-  yr, mo, da: Word;
+  curYr, curMo, curDa: Word;
   hr, mn, sc, ms: Word;
   dateStr, timeStr, monthYearStr: string;
-  startCol, daysInMonth, d, col, row: Integer;
-  cellX, cellY: Integer;
+  startCol, daysInMonth, prevDaysInMonth, d, col, row: Integer;
+  cellIndex, prevYear, prevMonth: Integer;
+  gridX, colW, rowH, cellX, cellY, bx, by, badgeW, badgeH: Integer;
+  isToday: Boolean;
 const
   DayNames: array[0..6] of string = ('Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su');
 begin
   if not Assigned(Sender) or not Assigned(Canvas) then Exit;
 
   nowDt := Now();
-  DecodeDate(nowDt, yr, mo, da);
+  DecodeDate(nowDt, curYr, curMo, curDa);
   DecodeTime(nowDt, hr, mn, sc, ms);
 
-  // 1. White card plate + slate-300 border
-  Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
-  Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
-
-  // 2. Date header
-  dateStr := FormatDateTime('dddd, d mmmm yyyy', nowDt);
-  Canvas.DrawText(16, 12, dateStr, 0.12, 0.16, 0.23);
-
-  // 3. Digital time in cobalt blue
-  timeStr := FormatDateTime('hh:nn:ss', nowDt);
-  Canvas.DrawText(16, 30, timeStr, 0.15, 0.39, 0.92);
-
-  // 4. Divider line
-  Canvas.DrawLine(14, 52, Sender.Width - 14, 52, 1.0, 0.88, 0.90, 0.94, 1.0);
-
-  // 5. Month & Year title
-  monthYearStr := FormatDateTime('mmmm yyyy', nowDt);
-  Canvas.DrawText(16, 62, monthYearStr, 0.20, 0.25, 0.32);
-
-  // 6. Day of week names: Mo Tu We Th Fr Sa Su
-  for col := 0 to 6 do
+  if FViewYear = 0 then
   begin
-    cellX := 16 + col * 29;
-    Canvas.DrawTextCentered(cellX, 82, 28, 16, DayNames[col], 0.39, 0.45, 0.55);
+    FViewYear := curYr;
+    FViewMonth := curMo;
   end;
 
-  // 7. Days grid (Monday = column 0)
-  startCol := (DayOfWeek(EncodeDate(yr, mo, 1)) + 5) mod 7;
-  daysInMonth := MonthDays[IsLeapYear(yr)][mo];
+  // 1. White card plate + subtle slate border
+  Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 8.0, 1.0, 1.0, 1.0, 1.0);
+  Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 8.0, 1.0, 0.82, 0.85, 0.90, 1.0);
 
+  // 2. Header background band (subtle light tint for top clock area)
+  Canvas.DrawRoundedRect(1, 1, Sender.Width - 2, 65, 7.0, 0.97, 0.98, 0.99, 1.0);
+  Canvas.DrawLine(12, 66, Sender.Width - 12, 66, 1.0, 0.88, 0.91, 0.94, 1.0);
+
+  // 3. Digital Clock in dark slate (large font if available)
+  timeStr := FormatDateTime('hh:nn:ss', nowDt);
+  if Assigned(FClockFont) and FClockFont.Valid then
+    Canvas.DrawText(20, 18, timeStr, 0.06, 0.09, 0.16, FClockFont.Handle)
+  else
+    Canvas.DrawText(20, 18, timeStr, 0.06, 0.09, 0.16);
+
+  // 4. Formatted Date subtitle in medium slate
+  dateStr := FormatDateTime('dddd, d mmmm yyyy', nowDt);
+  Canvas.DrawText(20, 44, dateStr, 0.39, 0.45, 0.55);
+
+  // 5. Month & Year Title in Navigation row (centered, click returns to Today)
+  monthYearStr := FormatDateTime('mmmm yyyy', EncodeDate(FViewYear, FViewMonth, 1));
+  Canvas.DrawTextCentered(40, 73, Sender.Width - 80, 26, monthYearStr, 0.12, 0.16, 0.23);
+
+  // 6. Day of week names header
+  gridX := 14;
+  colW := 36;
+  rowH := 26;
+
+  for col := 0 to 6 do
+  begin
+    cellX := gridX + col * colW;
+    if col >= 5 then
+      Canvas.DrawTextCentered(cellX, 104, colW, 18, DayNames[col], 0.30, 0.35, 0.44)
+    else
+      Canvas.DrawTextCentered(cellX, 104, colW, 18, DayNames[col], 0.45, 0.50, 0.60);
+  end;
+
+  // 7. Days Grid: Full 6-week matrix (42 cells: 6 rows * 7 columns)
+  // Monday = column 0, Sunday = column 6
+  startCol := (DayOfWeek(EncodeDate(FViewYear, FViewMonth, 1)) + 5) mod 7;
+  daysInMonth := MonthDays[IsLeapYear(FViewYear)][FViewMonth];
+
+  // Previous month trailing days
+  if FViewMonth = 1 then
+  begin
+    prevYear := FViewYear - 1;
+    prevMonth := 12;
+  end
+  else
+  begin
+    prevYear := FViewYear;
+    prevMonth := FViewMonth - 1;
+  end;
+  prevDaysInMonth := MonthDays[IsLeapYear(prevYear)][prevMonth];
+
+  // A. Draw leading days from previous month
+  for col := 0 to startCol - 1 do
+  begin
+    d := prevDaysInMonth - (startCol - 1 - col);
+    cellX := gridX + col * colW;
+    cellY := 126;
+    Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.70, 0.74, 0.80);
+  end;
+
+  // B. Draw current viewed month days
+  badgeW := 26;
+  badgeH := 24;
   for d := 1 to daysInMonth do
   begin
-    col := (startCol + d - 1) mod 7;
-    row := (startCol + d - 1) div 7;
-    cellX := 16 + col * 29;
-    cellY := 104 + row * 20;
+    cellIndex := startCol + d - 1;
+    col := cellIndex mod 7;
+    row := cellIndex div 7;
+    cellX := gridX + col * colW;
+    cellY := 126 + row * rowH;
 
-    if d = da then
+    isToday := (FViewYear = curYr) and (FViewMonth = curMo) and (d = curDa);
+    if isToday then
     begin
-      // Highlight today with blue badge and white text
-      Canvas.DrawRoundedRect(cellX + 2, cellY, 24, 18, 4.0, 0.15, 0.39, 0.92, 1.0);
-      Canvas.DrawTextCentered(cellX, cellY, 28, 18, IntToStr(d), 1.0, 1.0, 1.0);
+      bx := cellX + (colW - badgeW) div 2;
+      by := cellY + (rowH - badgeH) div 2;
+      Canvas.DrawRoundedRect(bx, by, badgeW, badgeH, 6.0, 0.15, 0.39, 0.92, 1.0);
+      Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 1.0, 1.0, 1.0);
     end
     else
     begin
-      Canvas.DrawTextCentered(cellX, cellY, 28, 18, IntToStr(d), 0.20, 0.25, 0.32);
+      Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.12, 0.16, 0.23);
     end;
+  end;
+
+  // C. Draw trailing days from next month up to 42 cells
+  d := 1;
+  for cellIndex := (startCol + daysInMonth) to 41 do
+  begin
+    col := cellIndex mod 7;
+    row := cellIndex div 7;
+    cellX := gridX + col * colW;
+    cellY := 126 + row * rowH;
+    Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.70, 0.74, 0.80);
+    Inc(d);
   end;
 end;
 
@@ -657,15 +737,23 @@ end;
 procedure TShellClockApplet.CreatePopupWindow();
 var
   popX, popY, popW, popH: Integer;
+  curDt: TDateTime;
+  curY, curM, curD: Word;
 begin
   if Assigned(FPopupWindow) then Exit;
 
-  popW := 240;
-  popH := 232;
+  popW := 280;
+  popH := 300;
+
+  curDt := Now();
+  DecodeDate(curDt, curY, curM, curD);
+  FViewYear := curY;
+  FViewMonth := curM;
 
   if Assigned(FButton) and Assigned(FPanelWindow) then
   begin
-    popX := Max(10, FButton.X - (popW - FButton.Width) div 2);
+    popX := FButton.X + (FButton.Width - popW) div 2;
+    popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
     if FPanelWindow.Y < 100 then
       popY := FPanelWindow.Y + FPanelWindow.Height + 4
     else
@@ -684,9 +772,22 @@ begin
   FPopupWindow.SetPosition(popX, popY);
   FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
 
-  // Drawing area renders card background and calendar grid
+  // Background drawing area (card plate, digital clock, date, calendar grid)
   FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
   FPlate.OnPaint := @HandlePlatePaint;
+  FPlate.OnMouseDown := @HandlePlateMouseDown;
+
+  // Month navigation: Prev button
+  FPrevBtn := TFtButton.Create(FPopupWindow, 14, 73, 26, 26, '<');
+  FPrevBtn.Flat := True;
+  FPrevBtn.CornerRadius := 4.0;
+  FPrevBtn.OnClick := @HandlePrevClick;
+
+  // Month navigation: Next button
+  FNextBtn := TFtButton.Create(FPopupWindow, popW - 40, 73, 26, 26, '>');
+  FNextBtn.Flat := True;
+  FNextBtn.CornerRadius := 4.0;
+  FNextBtn.OnClick := @HandleNextClick;
 end;
 
 procedure TShellClockApplet.DestroyPopupWindow();
@@ -694,8 +795,54 @@ begin
   if Assigned(FPopupWindow) then
   begin
     FPlate := nil;
+    FPrevBtn := nil;
+    FNextBtn := nil;
     FPopupWindow.Free();
     FPopupWindow := nil;
+  end;
+end;
+
+procedure TShellClockApplet.HandlePrevClick(Sender: TFtButton);
+begin
+  if FViewMonth <= 1 then
+  begin
+    FViewMonth := 12;
+    Dec(FViewYear);
+  end
+  else
+    Dec(FViewMonth);
+
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+end;
+
+procedure TShellClockApplet.HandleNextClick(Sender: TFtButton);
+begin
+  if FViewMonth >= 12 then
+  begin
+    FViewMonth := 1;
+    Inc(FViewYear);
+  end
+  else
+    Inc(FViewMonth);
+
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+end;
+
+procedure TShellClockApplet.HandlePlateMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer);
+var
+  curY, curM, curD: Word;
+begin
+  if (Y <= 102) and (FPlate <> nil) then
+  begin
+    DecodeDate(Now(), curY, curM, curD);
+    if (FViewYear <> curY) or (FViewMonth <> curM) then
+    begin
+      FViewYear := curY;
+      FViewMonth := curM;
+      FPlate.Invalidate();
+    end;
   end;
 end;
 
@@ -710,14 +857,20 @@ begin
   begin
     FLastClockSec := sec;
     if Assigned(FButton) then
-      FButton.Caption := FormatDateTime('hh:nn:ss', nowDt);
+      FButton.Caption := FormatDateTime('ddd d mmm  hh:nn', nowDt);
     if IsPopupOpen() and Assigned(FPlate) then
       FPlate.Invalidate();
   end;
 end;
 
 procedure TShellClockApplet.ShowPopup();
+var
+  curY, curM, curD: Word;
 begin
+  DecodeDate(Now(), curY, curM, curD);
+  FViewYear := curY;
+  FViewMonth := curM;
+
   if not Assigned(FPopupWindow) then
     CreatePopupWindow();
 
