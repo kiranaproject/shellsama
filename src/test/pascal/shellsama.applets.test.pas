@@ -14,6 +14,7 @@ type
   private
     FTestWin      : TFtWindow;
     FVolumeApplet : TShellVolumeApplet;
+    FClockApplet  : TShellClockApplet;
     FSessionApplet: TShellSessionApplet;
   protected
     procedure SetUp(); override;
@@ -22,6 +23,7 @@ type
     procedure TestVolumeAppletCreation();
     procedure TestVolumeAppletGlyphsAndMute();
     procedure TestVolumePopupLifecycle();
+    procedure TestClockAppletLifecycle();
     procedure TestSessionAppletCreationAndMenu();
     procedure TestSessionAppletBounds();
   end;
@@ -45,7 +47,8 @@ begin
 
   FTestWin := TFtWindow.Create(400, 100, 'test-applets-window');
   FVolumeApplet := TShellVolumeApplet.Create(FTestWin, 10, 10, 32, 28);
-  FSessionApplet := TShellSessionApplet.Create(FTestWin, 50, 10, 32, 28);
+  FClockApplet := TShellClockApplet.Create(FTestWin, 50, 10, 80, 28);
+  FSessionApplet := TShellSessionApplet.Create(FTestWin, 140, 10, 32, 28);
 end;
 
 procedure TAppletsTest.TearDown();
@@ -54,6 +57,12 @@ begin
   begin
     FSessionApplet.Free();
     FSessionApplet := nil;
+  end;
+
+  if Assigned(FClockApplet) then
+  begin
+    FClockApplet.Free();
+    FClockApplet := nil;
   end;
 
   if Assigned(FVolumeApplet) then
@@ -128,6 +137,35 @@ begin
   // Toggle close
   FVolumeApplet.TogglePopup();
   AssertFalse('Popup should be closed after second TogglePopup()', FVolumeApplet.IsPopupOpen());
+end;
+
+procedure TAppletsTest.TestClockAppletLifecycle();
+begin
+  AssertNotNull('Clock applet must be created', FClockApplet);
+  AssertNotNull('Clock button must be created', FClockApplet.Button);
+  AssertFalse('Clock popup should start closed', FClockApplet.IsPopupOpen());
+  AssertNull('Clock popup window should be nil initially', FClockApplet.PopupWindow);
+
+  // UpdateClock should set caption
+  FClockApplet.UpdateClock();
+  AssertTrue('Clock button should display time', Length(FClockApplet.Button.Caption) > 0);
+
+  // Open popup
+  FClockApplet.ShowPopup();
+  AssertTrue('Clock popup should be open after ShowPopup()', FClockApplet.IsPopupOpen());
+  AssertNotNull('Clock popup window should exist', FClockApplet.PopupWindow);
+  AssertTrue('Clock button toggled while popup open', FClockApplet.Button.Toggled);
+
+  // Hide popup
+  FClockApplet.HidePopup();
+  AssertFalse('Clock popup should be closed after HidePopup()', FClockApplet.IsPopupOpen());
+  AssertFalse('Clock button untoggled after HidePopup()', FClockApplet.Button.Toggled);
+
+  // Toggle open and close
+  FClockApplet.TogglePopup();
+  AssertTrue('Clock popup should be open after TogglePopup()', FClockApplet.IsPopupOpen());
+  FClockApplet.TogglePopup();
+  AssertFalse('Clock popup should be closed after TogglePopup()', FClockApplet.IsPopupOpen());
 end;
 
 procedure TAppletsTest.TestSessionAppletCreationAndMenu();

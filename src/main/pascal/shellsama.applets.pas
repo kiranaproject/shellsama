@@ -1,4 +1,4 @@
-{ Unit ShellSama.Applets — Desktop Panel Built-in Applets (Volume & Session) }
+{ Unit ShellSama.Applets — Desktop Panel Built-in Applets (Volume, Clock & Session) }
 
 unit ShellSama.Applets;
 
@@ -7,8 +7,9 @@ unit ShellSama.Applets;
 interface
 
 uses
-  Classes, SysUtils, Math, Process,
-  ftpas.api, ftpas.types, ftpas, ftpas.controls, ftpas.menus;
+  Classes, SysUtils, Math, Process, DateUtils,
+  ftpas.api, ftpas.types, ftpas, ftpas.controls, ftpas.menus,
+  ftpas.canvas, ftpas.creative;
 
 type
   TVolumeIconKind = (vikMuted, vikLow, vikMedium, vikHigh);
@@ -19,10 +20,10 @@ type
     FPanelWindow   : TFtWindow;
     FButton        : TFtButton;
     FPopupWindow   : TFtWindow;
+    FPlate         : TFtDrawingArea;
     FVolumeLabel   : TFtLabel;
     FVolumeSlider  : TFtSlider;
     FMuteBtn       : TFtButton;
-    FCloseBtn      : TFtButton;
 
     FCurVolume     : Integer;
     FIsMuted       : Boolean;
@@ -30,12 +31,14 @@ type
     FIsUpdatingUI  : Boolean;
     FLastCheckTick : Int64;
     // Guards against a slow volume probe stacking up on the main loop thread.
-    FQueryBusy     : Boolean;
+  FQueryBusy     : Boolean;
+    FOnDismiss     : TNotifyEvent;
 
     procedure HandleButtonClick(Sender: TFtButton);
     procedure HandleSliderChange(Sender: TFtSlider; Value: Double);
     procedure HandleMuteClick(Sender: TFtButton);
-    procedure HandleCloseClick(Sender: TFtButton);
+    procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandlePopupWindowDismiss(Sender: TFtWindow);
 
     procedure CreatePopupWindow();
     procedure DestroyPopupWindow();
@@ -66,6 +69,40 @@ type
     property Slider: TFtSlider read FVolumeSlider;
     property MuteButton: TFtButton read FMuteBtn;
     property VolumeLabel: TFtLabel read FVolumeLabel;
+    property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
+  end;
+
+  { TShellClockApplet — Interactive Clock & Calendar Applet }
+  TShellClockApplet = class
+  private
+    FPanelWindow   : TFtWindow;
+    FButton        : TFtButton;
+    FPopupWindow   : TFtWindow;
+    FPlate         : TFtDrawingArea;
+    FLastClockSec  : Integer;
+    FOnDismiss     : TNotifyEvent;
+
+    procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandlePopupWindowDismiss(Sender: TFtWindow);
+
+    procedure CreatePopupWindow();
+    procedure DestroyPopupWindow();
+  public
+    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+    destructor Destroy(); override;
+
+    procedure UpdateClock();
+    procedure ShowPopup();
+    procedure HidePopup();
+    procedure TogglePopup();
+    function IsPopupOpen(): Boolean;
+
+    procedure SetBounds(AX, AY, AW, AH: Integer);
+
+    property Button: TFtButton read FButton;
+    property PopupWindow: TFtWindow read FPopupWindow;
+    property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
   end;
 
   { TShellSessionApplet — Power / Session Management Applet }
@@ -74,6 +111,7 @@ type
     FPanelWindow : TFtWindow;
     FButton      : TFtButton;
     FMenu        : TFtPopupMenu;
+    FIsOpen      : Boolean;
 
     procedure HandleButtonClick(Sender: TFtButton);
     procedure HandleLockScreen(Sender: TFtMenuItem);
@@ -86,6 +124,11 @@ type
     destructor Destroy(); override;
 
     procedure SetBounds(AX, AY, AW, AH: Integer);
+    procedure ShowPopup();
+    procedure HidePopup();
+    procedure TogglePopup();
+    function IsPopupOpen(): Boolean;
+
     property Button: TFtButton read FButton;
     property Menu: TFtPopupMenu read FMenu;
   end;
@@ -156,9 +199,11 @@ begin
   FIsUpdatingUI := False;
   FLastCheckTick := 0;
   FQueryBusy := False;
+  FOnDismiss := nil;
 
   FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
   FButton.Flat := True;
+  FButton.IsToggle := True;
   FButton.CornerRadius := 6.0;
   FButton.IconPosition := ftipOnly;
   FButton.SetIconSize(18, 18);
@@ -240,10 +285,8 @@ begin
   FCurVolume := EnsureRange(APercent, 0, 150);
   fracStr := FormatFloat('0.00', FCurVolume / 100.0);
 
-  // Try wpctl
   if not RunCommand('/usr/bin/wpctl', ['set-volume', '@DEFAULT_AUDIO_SINK@', fracStr], dummy) then
   begin
-    // Fallback amixer
     RunCommand('/usr/bin/amixer', ['-q', 'sset', 'Master', IntToStr(FCurVolume) + '%'], dummy);
   end;
 
@@ -261,10 +304,8 @@ procedure TShellVolumeApplet.ToggleMute();
 var
   dummy: string;
 begin
-  // Try wpctl
   if not RunCommand('/usr/bin/wpctl', ['set-mute', '@DEFAULT_AUDIO_SINK@', 'toggle'], dummy) then
   begin
-    // Fallback amixer
     RunCommand('/usr/bin/amixer', ['-q', 'sset', 'Master', 'toggle'], dummy);
   end;
 
@@ -281,7 +322,6 @@ procedure TShellVolumeApplet.UpdateUI();
 begin
   if FButton = nil then Exit;
 
-  // 1. Update panel button monochrome SVG icon
   FButton.Caption := '';
   FButton.IconPosition := ftipOnly;
   FButton.SetIconSize(18, 18);
@@ -307,7 +347,6 @@ begin
     FButton.SetIconSVG(SVG_VOL_HIGH);
   end;
 
-  // 2. Update popup widgets if currently open
   if Assigned(FPopupWindow) and not FIsUpdatingUI then
   begin
     FIsUpdatingUI := True;
@@ -326,14 +365,29 @@ begin
       if Assigned(FMuteBtn) then
       begin
         if FIsMuted then
-          FMuteBtn.Caption := 'Unmute'
+          FMuteBtn.Caption := 'Unmute Audio'
         else
-          FMuteBtn.Caption := 'Mute';
+          FMuteBtn.Caption := 'Mute Audio';
       end;
     finally
       FIsUpdatingUI := False;
     end;
   end;
+end;
+
+procedure TShellVolumeApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+begin
+  if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+  // White card background with subtle rounded border
+  Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+  Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+end;
+
+procedure TShellVolumeApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
 end;
 
 procedure TShellVolumeApplet.CreatePopupWindow();
@@ -342,8 +396,8 @@ var
 begin
   if Assigned(FPopupWindow) then Exit;
 
-  popW := 190;
-  popH := 105;
+  popW := 200;
+  popH := 92;
 
   if Assigned(FButton) and Assigned(FPanelWindow) then
   begin
@@ -364,24 +418,29 @@ begin
   FPopupWindow.Borderless := True;
   FPopupWindow.SkipTaskbar := True;
   FPopupWindow.SetPosition(popX, popY);
+  FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
 
-  FVolumeLabel := TFtLabel.Create(FPopupWindow, 14, 10, popW - 28, 20, 'Volume: ' + IntToStr(FCurVolume) + '%');
+  // Background plate
+  FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
+  FPlate.OnPaint := @HandlePlatePaint;
+
+  // Volume text label in dark slate
+  FVolumeLabel := TFtLabel.Create(FPopupWindow, 16, 10, popW - 32, 18, 'Volume: ' + IntToStr(FCurVolume) + '%');
   FVolumeLabel.Alignment := ftaLeft;
-  FVolumeLabel.SetColor(0.95, 0.95, 0.98);
+  FVolumeLabel.SetColor(0.12, 0.16, 0.23);
 
-  FVolumeSlider := TFtSlider.Create(FPopupWindow, 14, 34, popW - 28, 22, ftsoHorizontal);
+  // Volume slider
+  FVolumeSlider := TFtSlider.Create(FPopupWindow, 16, 32, popW - 32, 22, ftsoHorizontal);
   FVolumeSlider.SetRange(0.0, 100.0);
   FVolumeSlider.Step := 1.0;
   FVolumeSlider.Value := FCurVolume;
   FVolumeSlider.OnChange := @HandleSliderChange;
 
-  FMuteBtn := TFtButton.Create(FPopupWindow, 14, 66, 76, 28, 'Mute');
-  FMuteBtn.CornerRadius := 6.0;
+  // Mute button
+  FMuteBtn := TFtButton.Create(FPopupWindow, 16, 58, popW - 32, 24, 'Mute Audio');
+  FMuteBtn.Flat := True;
+  FMuteBtn.CornerRadius := 4.0;
   FMuteBtn.OnClick := @HandleMuteClick;
-
-  FCloseBtn := TFtButton.Create(FPopupWindow, popW - 90, 66, 76, 28, 'Close');
-  FCloseBtn.CornerRadius := 6.0;
-  FCloseBtn.OnClick := @HandleCloseClick;
 
   UpdateUI();
 end;
@@ -393,7 +452,7 @@ begin
     FVolumeLabel := nil;
     FVolumeSlider := nil;
     FMuteBtn := nil;
-    FCloseBtn := nil;
+    FPlate := nil;
     FPopupWindow.Free();
     FPopupWindow := nil;
   end;
@@ -405,16 +464,25 @@ begin
     CreatePopupWindow();
 
   if Assigned(FPopupWindow) then
+  begin
     FPopupWindow.Show();
-  // Refresh immediately, so the popup never shows a stale value from before the
-  // probe was idle.
+    FPopupWindow.GrabPopupInput();
+    if Assigned(FButton) then
+      FButton.Toggled := True;
+  end;
+
   Tick();
 end;
 
 procedure TShellVolumeApplet.HidePopup();
 begin
   if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.UngrabInput();
     FPopupWindow.Hide();
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
 end;
 
 procedure TShellVolumeApplet.TogglePopup();
@@ -428,38 +496,20 @@ end;
 function TShellVolumeApplet.IsPopupOpen(): Boolean;
 begin
   Result := Assigned(FPopupWindow) and FPopupWindow.Visible;
-end;procedure TShellVolumeApplet.Tick();
+end;
+
+procedure TShellVolumeApplet.Tick();
 var
   nowTick: Int64;
   newVol: Integer;
   newMuted: Boolean;
 begin
-  // Only probe while the popup is open.
-  //
-  // wpctl is a separate process (10-100 ms measured), and polling it every 1.5 s
-  // forever was the single largest remaining idle cost after the main loop was
-  // fixed: 0.053 of the shell's 0.075 cores. It was also pointless most of the
-  // time - the volume is only visible while the popup is open, and a change made
-  // elsewhere (a keyboard volume key) is picked up on the next open because
-  // ShowPopup() calls Tick() directly.
-  //
-  // The icon does stay stale until the popup is next opened. That is a real
-  // behaviour change, accepted because it buys ~70% of the remaining idle cost.
   if not IsPopupOpen() then Exit;
 
   nowTick := DateTimeToTimeStamp(Now()).Time;
-  if Abs(nowTick - FLastCheckTick) < 1500 then Exit; // Check every 1.5 seconds
+  if Abs(nowTick - FLastCheckTick) < 1500 then Exit;
   FLastCheckTick := nowTick;
 
-  // Skip polling while a previous check is still running. QueryVolume shells out
-  // to wpctl, which is not instantaneous: measured at 10-100 ms per call. Because
-  // this runs on the toolkit's main loop thread, that time was taken out of the
-  // event loop every 1.5 s - the loop would stall for up to 100 ms and then catch
-  // up, which also showed up as CPU time attributed to the shell rather than to
-  // wpctl.
-  //
-  // It does not make the poll asynchronous, but it does stop checks from stacking
-  // up if one is slow. See the roadmap note about moving this off the main thread.
   if FQueryBusy then Exit;
   FQueryBusy := True;
   try
@@ -493,9 +543,222 @@ begin
   ToggleMute();
 end;
 
-procedure TShellVolumeApplet.HandleCloseClick(Sender: TFtButton);
+// =============================================================================
+// TShellClockApplet Implementation
+// =============================================================================
+
+constructor TShellClockApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+begin
+  inherited Create();
+  FPanelWindow := AParentWindow;
+  FLastClockSec := -1;
+  FOnDismiss := nil;
+
+  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '--:--:--');
+  FButton.Flat := True;
+  FButton.IsToggle := True;
+  FButton.CornerRadius := 6.0;
+  FButton.OnClick := @HandleButtonClick;
+
+  UpdateClock();
+end;
+
+destructor TShellClockApplet.Destroy();
+begin
+  DestroyPopupWindow();
+  if Assigned(FButton) then
+  begin
+    FButton.Free();
+    FButton := nil;
+  end;
+  inherited Destroy();
+end;
+
+procedure TShellClockApplet.SetBounds(AX, AY, AW, AH: Integer);
+begin
+  if Assigned(FButton) then
+    FButton.SetBounds(AX, AY, AW, AH);
+end;
+
+procedure TShellClockApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  nowDt: TDateTime;
+  yr, mo, da: Word;
+  hr, mn, sc, ms: Word;
+  dateStr, timeStr, monthYearStr: string;
+  startCol, daysInMonth, d, col, row: Integer;
+  cellX, cellY: Integer;
+const
+  DayNames: array[0..6] of string = ('Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su');
+begin
+  if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+
+  nowDt := Now();
+  DecodeDate(nowDt, yr, mo, da);
+  DecodeTime(nowDt, hr, mn, sc, ms);
+
+  // 1. White card plate + slate-300 border
+  Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+  Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+
+  // 2. Date header
+  dateStr := FormatDateTime('dddd, d mmmm yyyy', nowDt);
+  Canvas.DrawText(16, 12, dateStr, 0.12, 0.16, 0.23);
+
+  // 3. Digital time in cobalt blue
+  timeStr := FormatDateTime('hh:nn:ss', nowDt);
+  Canvas.DrawText(16, 30, timeStr, 0.15, 0.39, 0.92);
+
+  // 4. Divider line
+  Canvas.DrawLine(14, 52, Sender.Width - 14, 52, 1.0, 0.88, 0.90, 0.94, 1.0);
+
+  // 5. Month & Year title
+  monthYearStr := FormatDateTime('mmmm yyyy', nowDt);
+  Canvas.DrawText(16, 62, monthYearStr, 0.20, 0.25, 0.32);
+
+  // 6. Day of week names: Mo Tu We Th Fr Sa Su
+  for col := 0 to 6 do
+  begin
+    cellX := 16 + col * 29;
+    Canvas.DrawTextCentered(cellX, 82, 28, 16, DayNames[col], 0.39, 0.45, 0.55);
+  end;
+
+  // 7. Days grid (Monday = column 0)
+  startCol := (DayOfWeek(EncodeDate(yr, mo, 1)) + 5) mod 7;
+  daysInMonth := MonthDays[IsLeapYear(yr)][mo];
+
+  for d := 1 to daysInMonth do
+  begin
+    col := (startCol + d - 1) mod 7;
+    row := (startCol + d - 1) div 7;
+    cellX := 16 + col * 29;
+    cellY := 104 + row * 20;
+
+    if d = da then
+    begin
+      // Highlight today with blue badge and white text
+      Canvas.DrawRoundedRect(cellX + 2, cellY, 24, 18, 4.0, 0.15, 0.39, 0.92, 1.0);
+      Canvas.DrawTextCentered(cellX, cellY, 28, 18, IntToStr(d), 1.0, 1.0, 1.0);
+    end
+    else
+    begin
+      Canvas.DrawTextCentered(cellX, cellY, 28, 18, IntToStr(d), 0.20, 0.25, 0.32);
+    end;
+  end;
+end;
+
+procedure TShellClockApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
 begin
   HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+end;
+
+procedure TShellClockApplet.CreatePopupWindow();
+var
+  popX, popY, popW, popH: Integer;
+begin
+  if Assigned(FPopupWindow) then Exit;
+
+  popW := 240;
+  popH := 232;
+
+  if Assigned(FButton) and Assigned(FPanelWindow) then
+  begin
+    popX := Max(10, FButton.X - (popW - FButton.Width) div 2);
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
+  end
+  else
+  begin
+    popX := 100;
+    popY := 100;
+  end;
+
+  FPopupWindow := TFtWindow.Create(popW, popH, 'shellsama-clock-popup');
+  FPopupWindow.WindowType := ftwtPopupMenu;
+  FPopupWindow.Borderless := True;
+  FPopupWindow.SkipTaskbar := True;
+  FPopupWindow.SetPosition(popX, popY);
+  FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
+
+  // Drawing area renders card background and calendar grid
+  FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
+  FPlate.OnPaint := @HandlePlatePaint;
+end;
+
+procedure TShellClockApplet.DestroyPopupWindow();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPlate := nil;
+    FPopupWindow.Free();
+    FPopupWindow := nil;
+  end;
+end;
+
+procedure TShellClockApplet.UpdateClock();
+var
+  nowDt: TDateTime;
+  sec: Integer;
+begin
+  nowDt := Now();
+  sec := DateTimeToTimeStamp(nowDt).Time div 1000;
+  if sec <> FLastClockSec then
+  begin
+    FLastClockSec := sec;
+    if Assigned(FButton) then
+      FButton.Caption := FormatDateTime('hh:nn:ss', nowDt);
+    if IsPopupOpen() and Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellClockApplet.ShowPopup();
+begin
+  if not Assigned(FPopupWindow) then
+    CreatePopupWindow();
+
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.Show();
+    FPopupWindow.GrabPopupInput();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+    if Assigned(FButton) then
+      FButton.Toggled := True;
+  end;
+end;
+
+procedure TShellClockApplet.HidePopup();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.UngrabInput();
+    FPopupWindow.Hide();
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
+end;
+
+procedure TShellClockApplet.TogglePopup();
+begin
+  if IsPopupOpen() then
+    HidePopup()
+  else
+    ShowPopup();
+end;
+
+function TShellClockApplet.IsPopupOpen(): Boolean;
+begin
+  Result := Assigned(FPopupWindow) and FPopupWindow.Visible;
+end;
+
+procedure TShellClockApplet.HandleButtonClick(Sender: TFtButton);
+begin
+  TogglePopup();
 end;
 
 // =============================================================================
@@ -506,9 +769,11 @@ constructor TShellSessionApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH:
 begin
   inherited Create();
   FPanelWindow := AParentWindow;
+  FIsOpen := False;
 
   FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
   FButton.Flat := True;
+  FButton.IsToggle := True;
   FButton.CornerRadius := 6.0;
   FButton.IconPosition := ftipOnly;
   FButton.SetIconSize(18, 18);
@@ -547,7 +812,7 @@ begin
     FButton.SetBounds(AX, AY, AW, AH);
 end;
 
-procedure TShellSessionApplet.HandleButtonClick(Sender: TFtButton);
+procedure TShellSessionApplet.ShowPopup();
 var
   menuX, menuY: Integer;
 begin
@@ -567,7 +832,43 @@ begin
     menuY := 100;
   end;
 
+  FIsOpen := True;
+  if Assigned(FButton) then
+    FButton.Toggled := True;
   FMenu.Show(menuX, menuY);
+end;
+
+procedure TShellSessionApplet.HidePopup();
+begin
+  if Assigned(FMenu) then
+    FMenu.Close();
+  FIsOpen := False;
+  if Assigned(FButton) then
+    FButton.Toggled := False;
+end;
+
+procedure TShellSessionApplet.TogglePopup();
+begin
+  if IsPopupOpen() then
+    HidePopup()
+  else
+    ShowPopup();
+end;
+
+function TShellSessionApplet.IsPopupOpen(): Boolean;
+begin
+  Result := FIsOpen and Assigned(FMenu) and FMenu.Visible;
+  if not Result then
+  begin
+    FIsOpen := False;
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
+end;
+
+procedure TShellSessionApplet.HandleButtonClick(Sender: TFtButton);
+begin
+  TogglePopup();
 end;
 
 procedure TShellSessionApplet.HandleLockScreen(Sender: TFtMenuItem);

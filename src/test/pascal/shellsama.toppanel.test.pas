@@ -26,6 +26,7 @@ type
     procedure TestLauncherSync();
     procedure TestTickExecution();
     procedure TestToggleShowDesktop();
+    procedure TestAppletHoverSwitching();
   end;
 
 implementation
@@ -160,6 +161,56 @@ begin
   FPanel.ToggleShowDesktop();
   FPanel.ToggleShowDesktop();
   AssertTrue('Panel remains valid after ShowDesktop toggles', FPanel.IsVisible or not FPanel.IsVisible);
+end;
+
+procedure TTopPanelTest.TestAppletHoverSwitching();
+begin
+  // Initially inactive
+  AssertFalse('Tracking should not be active initially', FPanel.TrackingActive);
+  AssertEquals('Active applet should be pakNone', Ord(pakNone), Ord(FPanel.ActiveApplet));
+
+  // 1. Hovering while inactive does NOT activate tracking
+  if Assigned(FPanel.VolumeApplet.Button.OnHover) then
+    FPanel.VolumeApplet.Button.OnHover(FPanel.VolumeApplet.Button, True);
+  AssertFalse('Hovering while inactive should not start tracking', FPanel.TrackingActive);
+  AssertEquals('Active applet remains pakNone', Ord(pakNone), Ord(FPanel.ActiveApplet));
+
+  // 2. Click Volume button -> activates Volume applet and starts tracking
+  if Assigned(FPanel.VolumeApplet.Button.OnClick) then
+    FPanel.VolumeApplet.Button.OnClick(FPanel.VolumeApplet.Button);
+  AssertTrue('Tracking should be active after volume button click', FPanel.TrackingActive);
+  AssertEquals('Active applet should be pakVolume', Ord(pakVolume), Ord(FPanel.ActiveApplet));
+  AssertTrue('Volume popup should be open', FPanel.VolumeApplet.IsPopupOpen());
+  AssertFalse('Clock popup should be closed', FPanel.ClockApplet.IsPopupOpen());
+
+  // 3. Hovering over Clock button while tracking is active -> switches to Clock applet
+  if Assigned(FPanel.ClockApplet.Button.OnHover) then
+    FPanel.ClockApplet.Button.OnHover(FPanel.ClockApplet.Button, True);
+  AssertTrue('Tracking remains active after switching to clock', FPanel.TrackingActive);
+  AssertEquals('Active applet should switch to pakClock', Ord(pakClock), Ord(FPanel.ActiveApplet));
+  AssertFalse('Volume popup should be closed after switch', FPanel.VolumeApplet.IsPopupOpen());
+  AssertTrue('Clock popup should be open after switch', FPanel.ClockApplet.IsPopupOpen());
+
+  // 4. Hovering over Session button while tracking is active -> switches to Session applet
+  if Assigned(FPanel.SessionApplet.Button.OnHover) then
+    FPanel.SessionApplet.Button.OnHover(FPanel.SessionApplet.Button, True);
+  AssertTrue('Tracking remains active after switching to session', FPanel.TrackingActive);
+  AssertEquals('Active applet should switch to pakSession', Ord(pakSession), Ord(FPanel.ActiveApplet));
+  AssertFalse('Clock popup should be closed after switch', FPanel.ClockApplet.IsPopupOpen());
+  AssertTrue('Session popup should be open after switch', FPanel.SessionApplet.IsPopupOpen());
+
+  // 5. Hovering over Show Desktop button does NOT switch applets
+  if Assigned(FPanel.ShowDesktopWidget.OnHover) then
+    FPanel.ShowDesktopWidget.OnHover(FPanel.ShowDesktopWidget, True);
+  AssertEquals('Active applet remains pakSession after hovering show desktop', Ord(pakSession), Ord(FPanel.ActiveApplet));
+  AssertTrue('Session popup remains open', FPanel.SessionApplet.IsPopupOpen());
+
+  // 6. Click active button (Session) -> dismisses applets and ends tracking
+  if Assigned(FPanel.SessionApplet.Button.OnClick) then
+    FPanel.SessionApplet.Button.OnClick(FPanel.SessionApplet.Button);
+  AssertFalse('Tracking should end after clicking active button', FPanel.TrackingActive);
+  AssertEquals('Active applet should be pakNone', Ord(pakNone), Ord(FPanel.ActiveApplet));
+  AssertFalse('Session popup should be closed', FPanel.SessionApplet.IsPopupOpen());
 end;
 
 initialization
