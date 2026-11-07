@@ -167,12 +167,12 @@ const
   DOCK_GAP           = 6;
   DOCK_MAX_WIDTH     = 720;
   // 6 top + 48 icon + 6 bottom margin: symmetrical 6px vertical margins.
-  // Running window indicator dot (diameter 4px) is centered vertically in the
-  // 6px bottom margin between icon bottom (54) and dock plate bottom (60).
+  // Running window indicator dot (diameter 6px) sits near the icon bottom edge,
+  // bleeding slightly to the top close to the icon.
   DOCK_HEIGHT        = 60;
   DOCK_BOTTOM_MARGIN = 3;
   DOCK_TOP_MARGIN    = 3;
-  DOT_SIZE           = 4;
+  DOT_SIZE           = 6;
 
 // Only declarations the window paint path honours: a background colour and a border
 // radius. The radius leaves the corners unpainted, so they show the desktop through
@@ -590,11 +590,12 @@ begin
   if GActiveDock.EntryWindowCountAt(idx) = 0 then Exit;
 
   focused := GActiveDock.EntryFocused(idx);
-  // AX/AY are the button's position in WINDOW coordinates, not offsets inside it, so
-  // the dot is placed relative to the button's own rectangle, centered in the margin
-  // between the icon's bottom edge and the dock's bottom edge.
+  // AX/AY are the button's position in WINDOW coordinates, not offsets inside it.
+  // The dot is placed relative to the button's own rectangle, positioned close to
+  // the icon bottom edge (bleeding slightly into the icon boundary) to preserve
+  // balanced clearance from the dock plate bottom.
   cxp := AX + (AW / 2);
-  cyp := (AY + AH) + ((DOCK_HEIGHT - (AY + AH)) / 2.0);
+  cyp := (AY + AH) + 1.0;
   radius := DOT_SIZE / 2;
 
   cv := TFtCanvas.Create(ACanvas);

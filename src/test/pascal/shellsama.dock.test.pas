@@ -81,7 +81,7 @@ begin
 
   // 60 tall, sitting 3px above the bottom edge, horizontally centred.
   // Symmetrical 6px vertical margins: 6px top margin + 48px icon + 6px bottom margin = 60px.
-  // Running indicator dot (4px diameter) is centered vertically in the 6px bottom margin.
+  // Running indicator dot (6px diameter) is placed close to the icon bottom edge.
   AssertEquals('Dock height', 60, FDock.PanelHeight());
   AssertEquals('Dock bottom margin', sh - 60 - 3, FDock.PanelY());
   AssertEquals('Dock strut bottom reserves height plus margins', 60 + 3 + 3, FDock.ComputeStrutBottom());
