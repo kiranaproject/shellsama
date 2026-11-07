@@ -115,7 +115,7 @@ uses
 const
   SVG_PANEL_ICON_COLOR = '#2c3e50';
 
-  PANEL_TIMER_MS = 100;
+  PANEL_TIMER_MS = 250;
   PANEL_ANIM_TIMER_MS = 16;
 
   SVG_DESKTOP_ICON =
@@ -585,7 +585,17 @@ begin
         ft_set_timer(PANEL_TIMER_MS, @TopPanelTickCallback, Self);
       end;
     end;
+  end
+  else if FAnimTimerActive then
+  begin
+    FAnimTimerActive := False;
+    if Assigned(ft_set_timer) then
+      ft_set_timer(PANEL_TIMER_MS, @TopPanelTickCallback, Self);
   end;
+
+  // Also drive the bottom panel if active
+  if Assigned(GBottomPanelInstance) then
+    GBottomPanelInstance.Tick();
 end;
 
 procedure TShellTopPanel.ToggleShowDesktop();
