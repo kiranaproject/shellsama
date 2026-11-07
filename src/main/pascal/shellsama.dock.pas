@@ -115,6 +115,7 @@ type
     function PanelWidth(): Integer; override;
     function PanelHeight(): Integer; override;
     function PanelY(): Integer; override;
+    function ComputeStrutBottom(): Integer; override;
 
     procedure RefreshDock();
     procedure Tick(); override;
@@ -308,6 +309,11 @@ begin
     Result := FtApp().ScreenHeight - DOCK_HEIGHT - DOCK_BOTTOM_MARGIN
   else
     Result := 1080 - DOCK_HEIGHT - DOCK_BOTTOM_MARGIN;
+end;
+
+function TShellDock.ComputeStrutBottom(): Integer;
+begin
+  Result := DOCK_HEIGHT + DOCK_BOTTOM_MARGIN;
 end;
 
 // ---------------------------------------------------------------- model

@@ -180,6 +180,7 @@ type
     function PanelY(): Integer; virtual;
     function PanelWidth(): Integer; virtual;
     function PanelHeight(): Integer; virtual;
+    function ComputeStrutBottom(): Integer; virtual;
     function GetTaskCount(): Integer;
     // Window id at a task slot. The dock groups these by application.
     function GetTaskWindow(AIndex: Integer): Cardinal;
@@ -560,6 +561,8 @@ end;
 // and then snaps back when the replacement window maps. Visible as a flicker on
 // every task change.
 procedure TShellTaskSurface.ResizeWindow(AWidth, AHeight: Integer; AX: Integer = 0);
+var
+  curX, strBot: Integer;
 begin
   if (FWindow = nil) or not FtIsLibLoaded() then Exit;
   if (AWidth <= 0) or (AHeight <= 0) then Exit;
@@ -571,14 +574,20 @@ begin
   // 0 is the only meaningful "leave the X alone" value here: the taskbar spans the
   // screen from 0 and has nothing to move.
   if AX <> 0 then
+  begin
     FWindow.SetPosition(AX, PanelY());
+    curX := AX;
+  end
+  else
+    curX := PanelX();
 
+  strBot := ComputeStrutBottom();
   // The strut covers the panel's horizontal extent, so it follows the new width.
   // Re-setting it does not remove it in between, which is what caused the flicker.
   FWindow.SetStrutPartial(
-    0, 0, 0, FPanelHeight,
+    0, 0, 0, strBot,
     0, 0, 0, 0, 0, 0,
-    0, FPanelWidth - 1
+    curX, curX + FPanelWidth - 1
   );
 
   FWindow.Invalidate();
@@ -586,7 +595,7 @@ end;
 
 procedure TShellTaskSurface.SetupWindow();
 var
-  px, py: Integer;
+  px, py, strBot: Integer;
 begin
   if not FtIsLibLoaded() then Exit;
 
@@ -601,14 +610,20 @@ begin
   FWindow.SetPosition(px, py);
   FWindow.BackgroundOpacity := 0.90;
 
+  strBot := ComputeStrutBottom();
   // Reserve bottom screen space via _NET_WM_STRUT & _NET_WM_STRUT_PARTIAL
   FWindow.SetStrutPartial(
-    0, 0, 0, FPanelHeight,
+    0, 0, 0, strBot,
     0, 0, 0, 0, 0, 0,
-    0, FPanelWidth - 1
+    px, px + PanelWidth() - 1
   );
 
   RefreshTasks();
+end;
+
+function TShellTaskSurface.ComputeStrutBottom(): Integer;
+begin
+  Result := FPanelHeight;
 end;
 
 function TShellTaskSurface.PanelX(): Integer;
