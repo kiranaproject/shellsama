@@ -79,7 +79,7 @@ begin
   sw := FtApp().ScreenWidth;
   sh := FtApp().ScreenHeight;
 
-  // 66 tall, sitting 8px above the bottom edge, horizontally centred. The taskbar it
+  // 66 tall, sitting 3px above the bottom edge, horizontally centred. The taskbar it
   // replaces is a 38px full-width strip flush with the bottom, so these are the
   // numbers that distinguish the two modes.
   //
@@ -88,7 +88,7 @@ begin
   // deliberately tight: the dot belongs to the icon, so a wide margin reads as dead
   // space inside the plate.
   AssertEquals('Dock height', 66, FDock.PanelHeight());
-  AssertEquals('Dock bottom margin', sh - 66 - 8, FDock.PanelY());
+  AssertEquals('Dock bottom margin', sh - 66 - 3, FDock.PanelY());
   AssertEquals('Dock is centred', (sw - FDock.PanelWidth()) div 2, FDock.PanelX());
   AssertEquals('Dock X is not the taskbar X', False, FDock.PanelX() = 0);
 end;

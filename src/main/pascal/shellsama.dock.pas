@@ -171,7 +171,7 @@ const
   // ends at row 55 (8 + 48 - 1), so the dot must start at 58 and end at 63, and the
   // plate must end at 65. 66 rows total.
   DOCK_HEIGHT        = 66;
-  DOCK_BOTTOM_MARGIN = 8;
+  DOCK_BOTTOM_MARGIN = 3;
   DOT_SIZE           = 6;
 
 // Only declarations the window paint path honours: a background colour and a border
