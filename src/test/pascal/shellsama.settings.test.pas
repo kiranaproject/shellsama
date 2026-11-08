@@ -79,10 +79,10 @@ end;
 
 procedure TSettingsTest.SetUp();
 begin
-  FSettings := TShellSettings.Create();
-  FReceiver := TTestSettingsReceiver.Create();
   FTempDir := GetTempDir() + 'shellsama_settings_test_' + IntToStr(GetProcessID());
   ForceDirectories(FTempDir);
+  FSettings := TShellSettings.Create(FTempDir + '/nonexistent.ini');
+  FReceiver := TTestSettingsReceiver.Create();
 end;
 
 procedure TSettingsTest.TearDown();

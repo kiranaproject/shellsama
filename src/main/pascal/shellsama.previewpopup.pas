@@ -46,13 +46,25 @@ type
   TPreviewBuildTileMenu = procedure(AWindow: Cardinal; AParent: TFtWidget) of object;
 
 const
-  PREVIEW_PLATE_CSS =
+  PREVIEW_PLATE_CSS_DARK =
     'background-color: rgba(24, 24, 32, 0.92);' +
     'border-radius: 14px;';
+  PREVIEW_PLATE_CSS_LIGHT =
+    'background-color: rgba(248, 249, 252, 0.94);' +
+    'border-radius: 14px;';
+  PREVIEW_PLATE_CSS = PREVIEW_PLATE_CSS_DARK;
 
-  PREVIEW_CAPTION_R = 0.86;
-  PREVIEW_CAPTION_G = 0.88;
-  PREVIEW_CAPTION_B = 0.92;
+  PREVIEW_CAPTION_DARK_R = 0.86;
+  PREVIEW_CAPTION_DARK_G = 0.88;
+  PREVIEW_CAPTION_DARK_B = 0.92;
+
+  PREVIEW_CAPTION_LIGHT_R = 0.12;
+  PREVIEW_CAPTION_LIGHT_G = 0.16;
+  PREVIEW_CAPTION_LIGHT_B = 0.22;
+
+  PREVIEW_CAPTION_R = PREVIEW_CAPTION_DARK_R;
+  PREVIEW_CAPTION_G = PREVIEW_CAPTION_DARK_G;
+  PREVIEW_CAPTION_B = PREVIEW_CAPTION_DARK_B;
 
   PREVIEW_HOVER_R = 0.35;
   PREVIEW_HOVER_G = 0.62;
@@ -162,6 +174,7 @@ type
     // Re-composites the sheet if the refresh interval has elapsed. Returns True when it
     // actually rebuilt, so a caller (and a test) can tell a real refresh from a skip.
     function RefreshIfDue(ANowMs: QWord): Boolean;
+    procedure ApplyThemeStyle();
 
     property OnActivate: TPreviewActivateEvent read FOnActivate write FOnActivate;
     property OnDismiss: TPreviewDismissEvent read FOnDismiss write FOnDismiss;
@@ -376,9 +389,8 @@ begin
   FWindow.WindowType := ftwtPopupMenu;   // override-redirect: no frames, no focus theft
   FWindow.Borderless := True;
   FWindow.SkipTaskbar := True;
-  FWindow.Style := PREVIEW_PLATE_CSS;
-  FWindow.BackgroundOpacity := 0.92;
   FWindow.OnPopupDismiss := @HandleDismiss;
+  ApplyThemeStyle();
 
   FArea := TFtDrawingArea.Create(FWindow, 0, 0, FLayout.Width, FLayout.Height);
   FArea.OnPaint := @HandlePaint;
@@ -480,10 +492,40 @@ begin
     Result := Cardinal(PtrUInt(FWindow.Handle));
 end;
 
+procedure TShellPreviewPopup.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  if FWindow = nil then Exit;
+
+  isDark := True;
+  if FtIsLibLoaded() then
+    isDark := FtApp().DarkMode;
+
+  if isDark then
+  begin
+    FWindow.StyleClass := 'preview dark';
+    FWindow.Style := PREVIEW_PLATE_CSS_DARK;
+    FWindow.BackgroundOpacity := 0.92;
+  end
+  else
+  begin
+    FWindow.StyleClass := 'preview light';
+    FWindow.Style := PREVIEW_PLATE_CSS_LIGHT;
+    FWindow.BackgroundOpacity := 0.94;
+  end;
+
+  FWindow.Invalidate();
+  if Assigned(FArea) then
+    FArea.Invalidate();
+end;
+
 procedure TShellPreviewPopup.HandlePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
 var
   i: Integer;
   r, t: TPreviewRect;
+  capR, capG, capB: Double;
+  isDark: Boolean;
 begin
   if Canvas = nil then Exit;
 
@@ -491,11 +533,28 @@ begin
   if Assigned(FSheet) then
     Canvas.DrawImage(0, 0, FSheet, 1.0);
 
+  isDark := True;
+  if FtIsLibLoaded() then
+    isDark := FtApp().DarkMode;
+
+  if isDark then
+  begin
+    capR := PREVIEW_CAPTION_DARK_R;
+    capG := PREVIEW_CAPTION_DARK_G;
+    capB := PREVIEW_CAPTION_DARK_B;
+  end
+  else
+  begin
+    capR := PREVIEW_CAPTION_LIGHT_R;
+    capG := PREVIEW_CAPTION_LIGHT_G;
+    capB := PREVIEW_CAPTION_LIGHT_B;
+  end;
+
   for i := 0 to High(FWindows) do
   begin
     t := PreviewTitleRect(FLayout, i);
     Canvas.DrawTextLeft(t.X, t.Y, t.W, t.H, FTitles[i],
-                        PREVIEW_CAPTION_R, PREVIEW_CAPTION_G, PREVIEW_CAPTION_B,
+                        capR, capG, capB,
                         FCaptionFont.Handle);
   end;
 

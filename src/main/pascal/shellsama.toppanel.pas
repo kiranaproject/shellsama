@@ -622,8 +622,8 @@ begin
     FWindow.Invalidate();
   if Assigned(FLauncher) and Assigned(FLauncher.Window) then
     FLauncher.Window.Invalidate();
-  if Assigned(GBottomPanelInstance) and Assigned(GBottomPanelInstance.WindowWidget) then
-    GBottomPanelInstance.WindowWidget.Invalidate();
+  if Assigned(GBottomPanelInstance) then
+    GBottomPanelInstance.ApplyThemeStyle();
 end;
 
 procedure TShellTopPanel.HandleSettingsClockFormatChange(Sender: TObject);

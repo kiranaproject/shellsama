@@ -71,7 +71,10 @@ type
     // ShellSama.WindowPixmaps for why the name has to be held rather than taken when a
     // preview is opened.
     FPixmaps      : TWindowPixmapStore;
+    FLastDarkMode : Boolean;
 
+    procedure HandleSettingsDarkModeChange(Sender: TObject);
+    procedure HandleSettingsDockChange(Sender: TObject);
     procedure BuildEntries();
     procedure FreeEntries();
     function DotWidth(): Double;
@@ -117,6 +120,7 @@ type
     function PanelHeight(): Integer; override;
     function PanelY(): Integer; override;
     function ComputeStrutBottom(): Integer; override;
+    procedure ApplyThemeStyle(); override;
 
     procedure RefreshDock();
     procedure Tick(); override;
@@ -178,23 +182,35 @@ const
 // Only declarations the window paint path honours: a background colour and a border
 // radius. The radius leaves the corners unpainted, so they show the desktop through
 // them. Needs a compositor; without one the corners render black.
-DOCK_PLATE_CSS =
+DOCK_PLATE_CSS_DARK =
   'background-color: rgba(24, 24, 32, 0.82);' +
   'border-radius: 18px;';
 
+DOCK_PLATE_CSS_LIGHT =
+  'background-color: rgba(255, 255, 255, 0.85);' +
+  'border-radius: 18px;';
+
+DOCK_PLATE_CSS = DOCK_PLATE_CSS_DARK;
+
 // A dock icon has almost no chrome until you point at it. The toolkit's default hover
-// is a blue halo plus a fully opaque plate, far too loud against a dark dock; this
-// replaces it with a faint white wash. Appended rather than loaded, so the theme's own
-// rules stay in place.
+// is a blue halo plus a fully opaque plate, far too loud against a dock; this replaces
+// it with a faint wash (white on dark plate, charcoal on light plate). Appended rather
+// than loaded, so the theme's own rules stay in place.
 //
 // Colour and alpha only. A border-radius here would drop the hover onto the toolkit's
 // halo path, which is the thing being replaced.
 // border-width: 0 matters. Without it the paint path falls back to an implicit 1px
 // outline (bg colour x 0.8) on hover, which reads as a bright ring around the icon.
 DOCK_ICON_CSS =
-  'button.dockicon { background-color: rgba(255, 255, 255, 0.00); border-width: 0; } ' +
-  'button.dockicon:hover { background-color: rgba(255, 255, 255, 0.10); border-width: 0; } ' +
-  'button.dockicon:active { background-color: rgba(255, 255, 255, 0.16); border-width: 0; }';
+  'button.dockicon { background-color: rgba(0, 0, 0, 0.00); border-width: 0; } ' +
+  'button.dockicon:hover { background-color: rgba(0, 0, 0, 0.08); border-width: 0; } ' +
+  'button.dockicon:active { background-color: rgba(0, 0, 0, 0.14); border-width: 0; } ' +
+  '.dark button.dockicon { background-color: rgba(255, 255, 255, 0.00); border-width: 0; } ' +
+  '.dark button.dockicon:hover { background-color: rgba(255, 255, 255, 0.10); border-width: 0; } ' +
+  '.dark button.dockicon:active { background-color: rgba(255, 255, 255, 0.16); border-width: 0; } ' +
+  'window.dark button.dockicon { background-color: rgba(255, 255, 255, 0.00); border-width: 0; } ' +
+  'window.dark button.dockicon:hover { background-color: rgba(255, 255, 255, 0.10); border-width: 0; } ' +
+  'window.dark button.dockicon:active { background-color: rgba(255, 255, 255, 0.16); border-width: 0; }';
 
 DOCK_ICON_STYLE_CLASS = 'dockicon';
 
@@ -226,12 +242,26 @@ begin
   FIconBitmaps := TList.Create();
 
   inherited Create(ALauncher, DOCK_ICON_SIZE + (2 * DOCK_PADDING), DOCK_HEIGHT);
+
+  if FtIsLibLoaded() then
+    FLastDarkMode := FtApp().DarkMode
+  else
+    FLastDarkMode := ShellSettings().DarkMode;
+
+  if not Assigned(ShellSettings().OnDarkModeChange) then
+    ShellSettings().OnDarkModeChange := @HandleSettingsDarkModeChange;
+  ShellSettings().OnDockSettingsChange := @HandleSettingsDockChange;
 end;
 
 destructor TShellDock.Destroy();
 var
   i: Integer;
 begin
+  if ShellSettings().OnDarkModeChange = @HandleSettingsDarkModeChange then
+    ShellSettings().OnDarkModeChange := nil;
+  if ShellSettings().OnDockSettingsChange = @HandleSettingsDockChange then
+    ShellSettings().OnDockSettingsChange := nil;
+
   if GActiveDock = Self then
     GActiveDock := nil;
   FreeEntries();
@@ -258,12 +288,62 @@ begin
   Result := 'shellsama-dock';
 end;
 
+procedure TShellDock.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  if FWindow = nil then Exit;
+
+  if FtIsLibLoaded() then
+    isDark := FtApp().DarkMode
+  else
+    isDark := ShellSettings().DarkMode;
+
+  FLastDarkMode := isDark;
+
+  if isDark then
+  begin
+    FWindow.StyleClass := 'dock dark';
+    FWindow.Style := DOCK_PLATE_CSS_DARK;
+    FWindow.BackgroundOpacity := 0.82;
+  end
+  else
+  begin
+    FWindow.StyleClass := 'dock light';
+    FWindow.Style := DOCK_PLATE_CSS_LIGHT;
+    FWindow.BackgroundOpacity := 0.85;
+  end;
+
+  FWindow.Invalidate();
+
+  if Assigned(FPreview) and FPreview.IsOpen() then
+    FPreview.ApplyThemeStyle();
+end;
+
+procedure TShellDock.HandleSettingsDarkModeChange(Sender: TObject);
+begin
+  if FtIsLibLoaded() then
+    FtApp().DarkMode := ShellSettings().DarkMode;
+  ApplyThemeStyle();
+end;
+
+procedure TShellDock.HandleSettingsDockChange(Sender: TObject);
+begin
+  if (ShellSettings().DockIconSize >= 24) and (ShellSettings().DockIconSize <= 128) then
+  begin
+    if FIconSize <> ShellSettings().DockIconSize then
+    begin
+      FIconSize := ShellSettings().DockIconSize;
+      LayoutButtons();
+    end;
+  end;
+end;
+
 procedure TShellDock.SetupWindow();
 begin
   inherited SetupWindow();
   if FWindow = nil then Exit;
-  FWindow.Style := DOCK_PLATE_CSS;
-  FWindow.BackgroundOpacity := 0.82;
+  ApplyThemeStyle();
   FWindow.OnMouseDown := @HandleDockMouseDown;
 
   if Assigned(ft_style_append_css_string) then
@@ -586,7 +666,7 @@ var
   idx: Integer;
   cv: TFtCanvas;
   radius, cxp, cyp: Double;
-  focused: Boolean;
+  focused, isDark: Boolean;
 begin
   if (ACanvas = nil) or (GActiveDock = nil) then Exit;
   idx := PtrInt(AUserData);
@@ -602,12 +682,28 @@ begin
   cyp := (AY + AH) + 1.0;
   radius := DOT_SIZE / 2;
 
+  isDark := True;
+  if FtIsLibLoaded() then
+    isDark := FtApp().DarkMode
+  else
+    isDark := ShellSettings().DarkMode;
+
   cv := TFtCanvas.Create(ACanvas);
   try
-    if focused then
-      cv.DrawCircle(cxp, cyp, radius, 0.95, 0.95, 0.98, 1.0)
+    if isDark then
+    begin
+      if focused then
+        cv.DrawCircle(cxp, cyp, radius, 0.95, 0.95, 0.98, 1.0)
+      else
+        cv.DrawCircle(cxp, cyp, radius - 0.5, 0.55, 0.58, 0.64, 0.85);
+    end
     else
-      cv.DrawCircle(cxp, cyp, radius - 0.5, 0.55, 0.58, 0.64, 0.85);
+    begin
+      if focused then
+        cv.DrawCircle(cxp, cyp, radius, 0.15, 0.18, 0.23, 1.0)
+      else
+        cv.DrawCircle(cxp, cyp, radius - 0.5, 0.48, 0.52, 0.58, 0.80);
+    end;
   finally
     cv.Free();
   end;
@@ -1003,8 +1099,25 @@ begin
 end;
 
 procedure TShellDock.Tick();
+var
+  curDark: Boolean;
 begin
   inherited Tick();
+
+  if FtIsLibLoaded() then
+    curDark := FtApp().DarkMode
+  else
+    curDark := ShellSettings().DarkMode;
+
+  if curDark <> FLastDarkMode then
+  begin
+    FLastDarkMode := curDark;
+    ApplyThemeStyle();
+  end;
+
+  // Ensure settings updates are detected if dock is running standalone
+  ShellSettings().CheckReload();
+
   RefreshPixmaps();
   SyncPreview();
 

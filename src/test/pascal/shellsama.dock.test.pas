@@ -10,7 +10,8 @@ uses
   ShellSama.DesktopApps,
   ShellSama.Launcher,
   ShellSama.BottomPanel,
-  ShellSama.Dock;
+  ShellSama.Dock,
+  ShellSama.Settings;
 
 type
   TDockTest = class(TTestCase)
@@ -34,6 +35,7 @@ type
     procedure TestTickDoesNotAccumulatePixmaps();
     procedure TestWideDockScrollsInsteadOfShrinking();
     procedure TestScrollingIsClampedAtBothEnds();
+    procedure TestDockFollowsDarkAndLightTheme();
   end;
 
 implementation
@@ -53,6 +55,7 @@ begin
       Fail('FtApp.Initialize failed: ' + E.Message);
   end;
 
+  ShellSettings().SetDefaults();
   FLauncher := TShellLauncher.Create();
   FDock := TShellDock.Create(FLauncher);
 end;
@@ -69,6 +72,7 @@ begin
     FLauncher.Free();
     FLauncher := nil;
   end;
+  ShellSettings().Load();
 end;
 
 procedure TDockTest.TestDockGeometry();
@@ -425,6 +429,31 @@ begin
   finally
     launcher.Free();
   end;
+end;
+
+procedure TDockTest.TestDockFollowsDarkAndLightTheme();
+begin
+  AssertNotNull('Dock instance', FDock);
+
+  // Dark mode
+  FtApp().DarkMode := True;
+  FDock.ApplyThemeStyle();
+  AssertTrue('Dock window has dark class', Pos('dark', FDock.WindowWidget.StyleClass) > 0);
+  AssertTrue('Dock window has dark plate css', Pos('24, 24, 32', FDock.WindowWidget.Style) > 0);
+  AssertEquals('Dark dock opacity is 0.82', 0.82, FDock.WindowWidget.BackgroundOpacity);
+
+  // Light mode
+  FtApp().DarkMode := False;
+  FDock.ApplyThemeStyle();
+  AssertTrue('Dock window has light class', Pos('light', FDock.WindowWidget.StyleClass) > 0);
+  AssertTrue('Dock window has light plate css', Pos('255, 255, 255', FDock.WindowWidget.Style) > 0);
+  AssertEquals('Light dock opacity is 0.85', 0.85, FDock.WindowWidget.BackgroundOpacity);
+
+  // Tick reacts to dark mode toggle
+  FtApp().DarkMode := True;
+  FDock.Tick();
+  AssertTrue('Dock window transitioned back to dark class on tick', Pos('dark', FDock.WindowWidget.StyleClass) > 0);
+  AssertTrue('Dock window transitioned back to dark plate on tick', Pos('24, 24, 32', FDock.WindowWidget.Style) > 0);
 end;
 
 initialization

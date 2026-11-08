@@ -183,6 +183,7 @@ type
     function PanelWidth(): Integer; virtual;
     function PanelHeight(): Integer; virtual;
     function ComputeStrutBottom(): Integer; virtual;
+    procedure ApplyThemeStyle(); virtual;
     function GetTaskCount(): Integer;
     // Window id at a task slot. The dock groups these by application.
     function GetTaskWindow(AIndex: Integer): Cardinal;
@@ -627,6 +628,12 @@ end;
 function TShellTaskSurface.ComputeStrutBottom(): Integer;
 begin
   Result := FPanelHeight;
+end;
+
+procedure TShellTaskSurface.ApplyThemeStyle();
+begin
+  if Assigned(FWindow) then
+    FWindow.Invalidate();
 end;
 
 function TShellTaskSurface.PanelX(): Integer;
