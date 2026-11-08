@@ -39,5 +39,6 @@ case "${TARGET}" in
     fi
     pasbuild compile "$@"
     refresh_libft
+    mkdir -p target/assets && cp -rf assets/* target/assets/ 2>/dev/null || true
     ;;
 esac

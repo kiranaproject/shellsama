@@ -54,6 +54,7 @@ type
     procedure StepVolume(ADelta: Integer);
 
     procedure UpdateUI();
+    procedure ApplyThemeStyle();
     procedure ShowPopup();
     procedure HidePopup();
     procedure TogglePopup();
@@ -136,6 +137,7 @@ type
     destructor Destroy(); override;
 
     procedure SetBounds(AX, AY, AW, AH: Integer);
+    procedure ApplyThemeStyle();
     procedure ShowPopup();
     procedure HidePopup();
     procedure TogglePopup();
@@ -145,11 +147,73 @@ type
     property Menu: TFtPopupMenu read FMenu;
   end;
 
+function GetPowerIconSVG(AIsDark: Boolean): string;
+function GetVolumeIconSVG(AKind: TVolumeIconKind; AIsDark: Boolean): string;
+
 implementation
 
 const
-  SVG_ICON_COLOR = '#2c3e50';
+  SVG_ICON_COLOR_LIGHT = '#2c3e50';
+  SVG_ICON_COLOR_DARK  = '#f0f2f5';
+  SVG_ICON_COLOR       = SVG_ICON_COLOR_LIGHT;
 
+function GetPowerIconSVG(AIsDark: Boolean): string;
+var
+  c: string;
+begin
+  if AIsDark then
+    c := SVG_ICON_COLOR_DARK
+  else
+    c := SVG_ICON_COLOR_LIGHT;
+
+  Result :=
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>' +
+    '<line x1="12" y1="2" x2="12" y2="12"/>' +
+    '</svg>';
+end;
+
+function GetVolumeIconSVG(AKind: TVolumeIconKind; AIsDark: Boolean): string;
+var
+  c: string;
+begin
+  if AIsDark then
+    c := SVG_ICON_COLOR_DARK
+  else
+    c := SVG_ICON_COLOR_LIGHT;
+
+  case AKind of
+    vikMuted:
+      Result :=
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="' + c + '"/>' +
+        '<line x1="22" y1="9" x2="16" y2="15"/>' +
+        '<line x1="16" y1="9" x2="22" y2="15"/>' +
+        '</svg>';
+    vikLow:
+      Result :=
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="' + c + '"/>' +
+        '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>' +
+        '</svg>';
+    vikMedium:
+      Result :=
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="' + c + '"/>' +
+        '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>' +
+        '<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>' +
+        '</svg>';
+    vikHigh:
+      Result :=
+        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="' + c + '"/>' +
+        '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>' +
+        '<path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>' +
+        '</svg>';
+  end;
+end;
+
+const
   SVG_POWER_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_ICON_COLOR + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>' +
@@ -330,9 +394,20 @@ begin
   ApplyVolume(FCurVolume + ADelta);
 end;
 
+procedure TShellVolumeApplet.ApplyThemeStyle();
+begin
+  UpdateUI();
+end;
+
 procedure TShellVolumeApplet.UpdateUI();
+var
+  isDark: Boolean;
 begin
   if FButton = nil then Exit;
+
+  isDark := False;
+  if FtIsLibLoaded() then
+    isDark := FtApp().DarkMode;
 
   FButton.Caption := '';
   FButton.IconPosition := ftipOnly;
@@ -341,22 +416,22 @@ begin
   if FIsMuted or (FCurVolume = 0) then
   begin
     FIconKind := vikMuted;
-    FButton.SetIconSVG(SVG_VOL_MUTE);
+    FButton.SetIconSVG(GetVolumeIconSVG(vikMuted, isDark));
   end
   else if FCurVolume < 33 then
   begin
     FIconKind := vikLow;
-    FButton.SetIconSVG(SVG_VOL_LOW);
+    FButton.SetIconSVG(GetVolumeIconSVG(vikLow, isDark));
   end
   else if FCurVolume < 66 then
   begin
     FIconKind := vikMedium;
-    FButton.SetIconSVG(SVG_VOL_MED);
+    FButton.SetIconSVG(GetVolumeIconSVG(vikMedium, isDark));
   end
   else
   begin
     FIconKind := vikHigh;
-    FButton.SetIconSVG(SVG_VOL_HIGH);
+    FButton.SetIconSVG(GetVolumeIconSVG(vikHigh, isDark));
   end;
 
   if Assigned(FPopupWindow) and not FIsUpdatingUI then
@@ -937,7 +1012,7 @@ begin
   FButton.CornerRadius := 6.0;
   FButton.IconPosition := ftipOnly;
   FButton.SetIconSize(18, 18);
-  FButton.SetIconSVG(SVG_POWER_ICON);
+  ApplyThemeStyle();
   FButton.OnClick := @HandleButtonClick;
 
   FMenu := TFtPopupMenu.Create(FPanelWindow);
@@ -972,6 +1047,17 @@ procedure TShellSessionApplet.SetBounds(AX, AY, AW, AH: Integer);
 begin
   if Assigned(FButton) then
     FButton.SetBounds(AX, AY, AW, AH);
+end;
+
+procedure TShellSessionApplet.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  if FButton = nil then Exit;
+  isDark := False;
+  if FtIsLibLoaded() then
+    isDark := FtApp().DarkMode;
+  FButton.SetIconSVG(GetPowerIconSVG(isDark));
 end;
 
 procedure TShellSessionApplet.ShowPopup();

@@ -7,6 +7,7 @@ interface
 uses
   Classes, SysUtils, fpcunit, testregistry,
   ftpas.api, ftpas.types, ftpas,
+  ShellSama.Applets,
   ShellSama.Launcher,
   ShellSama.TopPanel;
 
@@ -27,6 +28,7 @@ type
     procedure TestTickExecution();
     procedure TestToggleShowDesktop();
     procedure TestAppletHoverSwitching();
+    procedure TestTopPanelIconsFollowDarkMode();
   end;
 
 implementation
@@ -211,6 +213,50 @@ begin
   AssertFalse('Tracking should end after clicking active button', FPanel.TrackingActive);
   AssertEquals('Active applet should be pakNone', Ord(pakNone), Ord(FPanel.ActiveApplet));
   AssertFalse('Session popup should be closed', FPanel.SessionApplet.IsPopupOpen());
+end;
+
+procedure TTopPanelTest.TestTopPanelIconsFollowDarkMode();
+var
+  svgLight, svgDark: string;
+begin
+  // 1. Launcher SVG resolution
+  svgLight := ResolveLauncherIconSVG(False);
+  svgDark  := ResolveLauncherIconSVG(True);
+  AssertTrue('Light launcher SVG must contain #4d4d4d', Pos('#4d4d4d', LowerCase(svgLight)) > 0);
+  AssertTrue('Dark launcher SVG must contain #f9f9f9', Pos('#f9f9f9', LowerCase(svgDark)) > 0);
+
+  // 2. Desktop SVG resolution
+  svgLight := GetDesktopIconSVG(False);
+  svgDark  := GetDesktopIconSVG(True);
+  AssertTrue('Light desktop SVG stroke must be #2c3e50', Pos('#2c3e50', LowerCase(svgLight)) > 0);
+  AssertTrue('Dark desktop SVG stroke must be #f0f2f5', Pos('#f0f2f5', LowerCase(svgDark)) > 0);
+
+  // 3. Power SVG resolution
+  svgLight := GetPowerIconSVG(False);
+  svgDark  := GetPowerIconSVG(True);
+  AssertTrue('Light power SVG stroke must be #2c3e50', Pos('#2c3e50', LowerCase(svgLight)) > 0);
+  AssertTrue('Dark power SVG stroke must be #f0f2f5', Pos('#f0f2f5', LowerCase(svgDark)) > 0);
+
+  // 4. Volume SVG resolution
+  svgLight := GetVolumeIconSVG(vikHigh, False);
+  svgDark  := GetVolumeIconSVG(vikHigh, True);
+  AssertTrue('Light volume SVG stroke must be #2c3e50', Pos('#2c3e50', LowerCase(svgLight)) > 0);
+  AssertTrue('Dark volume SVG stroke must be #f0f2f5', Pos('#f0f2f5', LowerCase(svgDark)) > 0);
+
+  // 5. Panel style switching
+  FtApp().DarkMode := False;
+  FPanel.ApplyThemeStyle();
+  AssertNotNull('Launcher button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.LauncherWidget.Handle));
+  AssertNotNull('Desktop button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.ShowDesktopWidget.Handle));
+  AssertNotNull('Volume button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.VolumeApplet.Button.Handle));
+  AssertNotNull('Session button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.SessionApplet.Button.Handle));
+
+  FtApp().DarkMode := True;
+  FPanel.ApplyThemeStyle();
+  AssertNotNull('Launcher button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.LauncherWidget.Handle));
+  AssertNotNull('Desktop button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.ShowDesktopWidget.Handle));
+  AssertNotNull('Volume button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.VolumeApplet.Button.Handle));
+  AssertNotNull('Session button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.SessionApplet.Button.Handle));
 end;
 
 initialization
