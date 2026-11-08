@@ -17,7 +17,8 @@ uses
   ShellSama.DockApps.Test,
   ShellSama.Desktop.Test,
   ShellSama.Tray.Test,
-  ShellSama.Applets.Test;
+  ShellSama.Applets.Test,
+  ShellSama.Settings.Test;
 
 var
   Application: TTestRunner;

@@ -7,7 +7,7 @@ interface
 uses
   Classes, SysUtils, fpcunit, testregistry,
   ftpas.api, ftpas.types, ftpas,
-  ShellSama.Desktop;
+  ShellSama.Desktop, ShellSama.Settings;
 
 type
   TDesktopTest = class(TTestCase)

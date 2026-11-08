@@ -9,7 +9,8 @@ interface
 uses
   Classes, SysUtils, Math, Process, DateUtils,
   ftpas.api, ftpas.types, ftpas, ftpas.controls, ftpas.menus,
-  ftpas.canvas, ftpas.creative, ftpas.font;
+  ftpas.canvas, ftpas.creative, ftpas.font,
+  ShellSama.Settings;
 
 type
   TVolumeIconKind = (vikMuted, vikLow, vikMedium, vikHigh);
@@ -124,6 +125,7 @@ type
     FIsOpen      : Boolean;
 
     procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandleSettings(Sender: TFtMenuItem);
     procedure HandleLockScreen(Sender: TFtMenuItem);
     procedure HandleSuspend(Sender: TFtMenuItem);
     procedure HandleLogOut(Sender: TFtMenuItem);
@@ -857,7 +859,12 @@ begin
   begin
     FLastClockSec := sec;
     if Assigned(FButton) then
-      FButton.Caption := FormatDateTime('ddd d mmm  hh:nn', nowDt);
+    begin
+      if SameText(ShellSettings().ClockFormat, '12h') then
+        FButton.Caption := FormatDateTime('ddd d mmm  h:nn am/pm', nowDt)
+      else
+        FButton.Caption := FormatDateTime('ddd d mmm  hh:nn', nowDt);
+    end;
     if IsPopupOpen() and Assigned(FPlate) then
       FPlate.Invalidate();
   end;
@@ -934,6 +941,8 @@ begin
   FButton.OnClick := @HandleButtonClick;
 
   FMenu := TFtPopupMenu.Create(FPanelWindow);
+  FMenu.AddItem('System Settings...', @HandleSettings);
+  FMenu.AddSeparator();
   FMenu.AddItem('Lock Screen', @HandleLockScreen);
   FMenu.AddItem('Suspend', @HandleSuspend);
   FMenu.AddItem('Log Out...', @HandleLogOut);
@@ -1022,6 +1031,11 @@ end;
 procedure TShellSessionApplet.HandleButtonClick(Sender: TFtButton);
 begin
   TogglePopup();
+end;
+
+procedure TShellSessionApplet.HandleSettings(Sender: TFtMenuItem);
+begin
+  ExecShellCmdAsync('configsama');
 end;
 
 procedure TShellSessionApplet.HandleLockScreen(Sender: TFtMenuItem);

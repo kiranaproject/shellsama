@@ -14,7 +14,8 @@ uses
   ShellSama.DesktopApps,
   ShellSama.Launcher,
   ShellSama.Tray,
-  ShellSama.Applets;
+  ShellSama.Applets,
+  ShellSama.Settings;
 
 type
   PCardinalArray = ^TCardinalArray;
@@ -65,6 +66,9 @@ type
     procedure HandleSessionButtonClick(Sender: TFtButton);
     procedure HandleSessionButtonHover(Sender: TFtButton; Hovered: Boolean);
     procedure HandleAppletDismiss(Sender: TObject);
+    procedure HandleSettingsDarkModeChange(Sender: TObject);
+    procedure HandleSettingsClockFormatChange(Sender: TObject);
+    procedure HandleSettingsShowDesktopChange(Sender: TObject);
 
     procedure ActivateApplet(AKind: TPanelAppletKind);
     procedure CloseAllApplets();
@@ -215,6 +219,14 @@ begin
   end;
 
   InitAtoms();
+
+  if FtIsLibLoaded() then
+    FtApp().DarkMode := ShellSettings().DarkMode;
+
+  ShellSettings().OnDarkModeChange := @HandleSettingsDarkModeChange;
+  ShellSettings().OnClockFormatChange := @HandleSettingsClockFormatChange;
+  ShellSettings().OnShowDesktopChange := @HandleSettingsShowDesktopChange;
+
   SetupWindow();
 
   if FtIsLibLoaded() then
@@ -456,6 +468,7 @@ begin
   FShowDesktopBtn.SetIconSize(18, 18);
   FShowDesktopBtn.SetIconSVG(SVG_DESKTOP_ICON);
   FShowDesktopBtn.OnClick := @HandleShowDesktopButtonClick;
+  FShowDesktopBtn.Visible := ShellSettings().ShowDesktopButton;
 
   // 3. Power / Session Applet (Shutdown button)
   FSessionApplet := TShellSessionApplet.Create(FWindow, FPanelWidth - 72, 3, 32, 32);
@@ -593,9 +606,40 @@ begin
       ft_set_timer(PANEL_TIMER_MS, @TopPanelTickCallback, Self);
   end;
 
+  // Check for settings updates from configsama
+  ShellSettings().CheckReload();
+
   // Also drive the bottom panel if active
   if Assigned(GBottomPanelInstance) then
     GBottomPanelInstance.Tick();
+end;
+
+procedure TShellTopPanel.HandleSettingsDarkModeChange(Sender: TObject);
+begin
+  if FtIsLibLoaded() then
+    FtApp().DarkMode := ShellSettings().DarkMode;
+  if Assigned(FWindow) then
+    FWindow.Invalidate();
+  if Assigned(FLauncher) and Assigned(FLauncher.Window) then
+    FLauncher.Window.Invalidate();
+  if Assigned(GBottomPanelInstance) and Assigned(GBottomPanelInstance.WindowWidget) then
+    GBottomPanelInstance.WindowWidget.Invalidate();
+end;
+
+procedure TShellTopPanel.HandleSettingsClockFormatChange(Sender: TObject);
+begin
+  if Assigned(FClockApplet) then
+    FClockApplet.UpdateClock();
+end;
+
+procedure TShellTopPanel.HandleSettingsShowDesktopChange(Sender: TObject);
+begin
+  if Assigned(FShowDesktopBtn) then
+  begin
+    FShowDesktopBtn.Visible := ShellSettings().ShowDesktopButton;
+    if Assigned(FWindow) then
+      FWindow.Invalidate();
+  end;
 end;
 
 procedure TShellTopPanel.ToggleShowDesktop();

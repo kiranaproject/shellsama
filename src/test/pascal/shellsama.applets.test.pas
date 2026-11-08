@@ -175,15 +175,17 @@ begin
   AssertEquals('Session button icon position must be ftipOnly', Ord(ftipOnly), Ord(FSessionApplet.Button.IconPosition));
 
   AssertNotNull('Session popup menu must be created', FSessionApplet.Menu);
-  AssertEquals('Session menu should contain 6 items', 6, FSessionApplet.Menu.ItemCount);
+  AssertEquals('Session menu should contain 8 items', 8, FSessionApplet.Menu.ItemCount);
 
   // Verify key menu items
-  AssertEquals('Item 0 should be Lock Screen', 'Lock Screen', FSessionApplet.Menu.Items[0].Caption);
-  AssertEquals('Item 1 should be Suspend', 'Suspend', FSessionApplet.Menu.Items[1].Caption);
-  AssertEquals('Item 2 should be Log Out...', 'Log Out...', FSessionApplet.Menu.Items[2].Caption);
-  // Item 3 is separator
-  AssertEquals('Item 4 should be Restart...', 'Restart...', FSessionApplet.Menu.Items[4].Caption);
-  AssertEquals('Item 5 should be Shut Down...', 'Shut Down...', FSessionApplet.Menu.Items[5].Caption);
+  AssertEquals('Item 0 should be System Settings...', 'System Settings...', FSessionApplet.Menu.Items[0].Caption);
+  // Item 1 is separator
+  AssertEquals('Item 2 should be Lock Screen', 'Lock Screen', FSessionApplet.Menu.Items[2].Caption);
+  AssertEquals('Item 3 should be Suspend', 'Suspend', FSessionApplet.Menu.Items[3].Caption);
+  AssertEquals('Item 4 should be Log Out...', 'Log Out...', FSessionApplet.Menu.Items[4].Caption);
+  // Item 5 is separator
+  AssertEquals('Item 6 should be Restart...', 'Restart...', FSessionApplet.Menu.Items[6].Caption);
+  AssertEquals('Item 7 should be Shut Down...', 'Shut Down...', FSessionApplet.Menu.Items[7].Caption);
 end;
 
 procedure TAppletsTest.TestSessionAppletBounds();

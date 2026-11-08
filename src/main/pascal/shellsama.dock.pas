@@ -33,7 +33,8 @@ uses
   ShellSama.DockApps,
   ShellSama.WindowPixmaps,
   ShellSama.PreviewPopup,
-  ShellSama.PreviewLayout;
+  ShellSama.PreviewLayout,
+  ShellSama.Settings;
 
 type
   TDockEntry = record
@@ -202,7 +203,10 @@ var
   apps: TDesktopAppList;
 begin
   // Set before the inherited constructor, which creates the window and lays out.
-  FIconSize := DOCK_ICON_SIZE;
+  if (ShellSettings().DockIconSize >= 24) and (ShellSettings().DockIconSize <= 128) then
+    FIconSize := ShellSettings().DockIconSize
+  else
+    FIconSize := DOCK_ICON_SIZE;
   FMaxDockWidth := DOCK_MAX_WIDTH;
   // On by default. It was opt-in while a refresh grew the shell's memory by 66MB/30s;
   // that turned out to be the toolkit choosing its EGL backend on a server with no DRI3

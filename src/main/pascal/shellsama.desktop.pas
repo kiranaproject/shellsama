@@ -10,17 +10,10 @@ interface
 uses
   Classes, SysUtils, Math, BaseUnix, ctypes,
   ftpas.api, ftpas.types, ftpas, ftpas.canvas, ftpas.creative, ftpas.menus,
-  ShellSama.DesktopApps;
+  ShellSama.DesktopApps, ShellSama.Settings;
 
 type
-  TWallpaperMode = (
-    wmFill,      // Scale to fill screen (crop if necessary, maintain aspect ratio)
-    wmFit,       // Fit within screen with letterboxing
-    wmStretch,   // Stretch to fill screen (ignore aspect ratio)
-    wmCenter,    // Center at original resolution
-    wmTile,      // Repeat across screen
-    wmSolidColor // Solid background color
-  );
+  TWallpaperMode = ShellSama.Settings.TWallpaperMode;
 
   TShellDesktop = class
   private
@@ -44,6 +37,9 @@ type
     procedure HandleChangeWallpaperClick(Sender: TFtMenuItem);
     procedure HandleStyleModeClick(Sender: TFtMenuItem);
     procedure HandleOpenTerminalClick(Sender: TFtMenuItem);
+    procedure HandleOpenSettingsClick(Sender: TFtMenuItem);
+    procedure HandleSettingsWallpaperChange(Sender: TObject);
+    procedure SetWallpaperInternal(const APath: string; AMode: TWallpaperMode; ASave: Boolean = True);
     procedure LoadConfig();
     procedure SaveConfig();
     function GetConfigFilePath(): string;
@@ -106,6 +102,7 @@ begin
 
   SetupWindow();
   LoadConfig();
+  ShellSettings().OnWallpaperChange := @HandleSettingsWallpaperChange;
 end;
 
 destructor TShellDesktop.Destroy();
@@ -157,6 +154,7 @@ var
   it: TFtMenuItem;
 begin
   FContextMenu := TFtPopupMenu.Create(nil);
+  FContextMenu.AddItem('Desktop & Wallpaper Settings...', @HandleOpenSettingsClick);
   FContextMenu.AddItem('Change Wallpaper...', @HandleChangeWallpaperClick);
   FContextMenu.AddSeparator();
 
@@ -308,6 +306,24 @@ begin
   end;
 end;
 
+procedure TShellDesktop.HandleOpenSettingsClick(Sender: TFtMenuItem);
+var
+  pid: pid_t;
+begin
+  pid := fpFork();
+  if pid = 0 then
+  begin
+    fpSetsid();
+    libc_system('configsama Background &');
+    fpExit(0);
+  end;
+end;
+
+procedure TShellDesktop.HandleSettingsWallpaperChange(Sender: TObject);
+begin
+  SetWallpaperInternal(ShellSettings().WallpaperPath, ShellSettings().WallpaperMode, False);
+end;
+
 procedure TShellDesktop.Show();
 begin
   if Assigned(FWindow) and not FIsVisible then
@@ -327,6 +343,11 @@ begin
 end;
 
 procedure TShellDesktop.SetWallpaper(const APath: string; AMode: TWallpaperMode = wmFill);
+begin
+  SetWallpaperInternal(APath, AMode, True);
+end;
+
+procedure TShellDesktop.SetWallpaperInternal(const APath: string; AMode: TWallpaperMode; ASave: Boolean = True);
 var
   newBmp: TFtBitmap;
 begin
@@ -356,7 +377,13 @@ begin
     FWallpaperPath := '';
   end;
 
-  SaveConfig();
+  if ASave then
+  begin
+    SaveConfig();
+    ShellSettings().WallpaperPath := FWallpaperPath;
+    ShellSettings().WallpaperMode := FWallpaperMode;
+    ShellSettings().Save();
+  end;
 
   if Assigned(FWindow) then
     FWindow.Repaint();
@@ -368,6 +395,8 @@ begin
   begin
     FWallpaperMode := AMode;
     SaveConfig();
+    ShellSettings().WallpaperMode := FWallpaperMode;
+    ShellSettings().Save();
     if Assigned(FWindow) then
       FWindow.Repaint();
   end;
@@ -398,6 +427,15 @@ var
   lines: TStringList;
   i, eqPos, modeVal: Integer;
 begin
+  // 1. Primary: load from Samarinda settings
+  ShellSettings().Load();
+  if (ShellSettings().WallpaperPath <> '') and FileExists(ShellSettings().WallpaperPath) then
+  begin
+    SetWallpaperInternal(ShellSettings().WallpaperPath, ShellSettings().WallpaperMode, False);
+    Exit;
+  end;
+
+  // 2. Fallback: desktop.conf legacy path
   confPath := GetConfigFilePath();
   if not FileExists(confPath) then Exit;
 
@@ -418,7 +456,7 @@ begin
         if key = 'wallpaper' then
         begin
           if (val <> '') and FileExists(val) then
-            SetWallpaper(val, FWallpaperMode);
+            SetWallpaperInternal(val, FWallpaperMode, False);
         end
         else if key = 'mode' then
         begin
