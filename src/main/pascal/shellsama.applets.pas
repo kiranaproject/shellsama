@@ -103,6 +103,7 @@ type
     destructor Destroy(); override;
 
     procedure UpdateClock();
+    procedure ApplyThemeStyle();
     procedure ShowPopup();
     procedure HidePopup();
     procedure TogglePopup();
@@ -151,6 +152,14 @@ function GetPowerIconSVG(AIsDark: Boolean): string;
 function GetVolumeIconSVG(AKind: TVolumeIconKind; AIsDark: Boolean): string;
 
 implementation
+
+function IsDarkTheme(): Boolean;
+begin
+  if FtIsLibLoaded() then
+    Result := FtApp().DarkMode
+  else
+    Result := ShellSettings().DarkMode;
+end;
 
 const
   SVG_ICON_COLOR_LIGHT = '#2c3e50';
@@ -397,6 +406,14 @@ end;
 procedure TShellVolumeApplet.ApplyThemeStyle();
 begin
   UpdateUI();
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+  if Assigned(FVolumeSlider) then
+    FVolumeSlider.Invalidate();
+  if Assigned(FMuteBtn) then
+    FMuteBtn.Invalidate();
+  if Assigned(FPopupWindow) then
+    FPopupWindow.Invalidate();
 end;
 
 procedure TShellVolumeApplet.UpdateUI();
@@ -405,9 +422,7 @@ var
 begin
   if FButton = nil then Exit;
 
-  isDark := False;
-  if FtIsLibLoaded() then
-    isDark := FtApp().DarkMode;
+  isDark := IsDarkTheme();
 
   FButton.Caption := '';
   FButton.IconPosition := ftipOnly;
@@ -444,6 +459,11 @@ begin
           FVolumeLabel.Text := 'Volume: Muted (' + IntToStr(FCurVolume) + '%)'
         else
           FVolumeLabel.Text := 'Volume: ' + IntToStr(FCurVolume) + '%';
+
+        if isDark then
+          FVolumeLabel.SetColor(0.85, 0.88, 0.95)
+        else
+          FVolumeLabel.SetColor(0.12, 0.16, 0.23);
       end;
 
       if Assigned(FVolumeSlider) then
@@ -463,11 +483,24 @@ begin
 end;
 
 procedure TShellVolumeApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  isDark: Boolean;
 begin
   if not Assigned(Sender) or not Assigned(Canvas) then Exit;
-  // White card background with subtle rounded border
-  Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
-  Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+
+  isDark := IsDarkTheme();
+  if isDark then
+  begin
+    // Dark mode plate and outline
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 24 / 255, 25 / 255, 38 / 255, 0.98);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 69 / 255, 71 / 255, 90 / 255, 0.80);
+  end
+  else
+  begin
+    // White card background with subtle rounded border
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+  end;
 end;
 
 procedure TShellVolumeApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
@@ -511,10 +544,13 @@ begin
   FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
   FPlate.OnPaint := @HandlePlatePaint;
 
-  // Volume text label in dark slate
+  // Volume text label
   FVolumeLabel := TFtLabel.Create(FPopupWindow, 16, 10, popW - 32, 18, 'Volume: ' + IntToStr(FCurVolume) + '%');
   FVolumeLabel.Alignment := ftaLeft;
-  FVolumeLabel.SetColor(0.12, 0.16, 0.23);
+  if IsDarkTheme() then
+    FVolumeLabel.SetColor(0.85, 0.88, 0.95)
+  else
+    FVolumeLabel.SetColor(0.12, 0.16, 0.23);
 
   // Volume slider
   FVolumeSlider := TFtSlider.Create(FPopupWindow, 16, 32, popW - 32, 22, ftsoHorizontal);
@@ -529,7 +565,7 @@ begin
   FMuteBtn.CornerRadius := 4.0;
   FMuteBtn.OnClick := @HandleMuteClick;
 
-  UpdateUI();
+  ApplyThemeStyle();
 end;
 
 procedure TShellVolumeApplet.DestroyPopupWindow();
@@ -549,6 +585,8 @@ procedure TShellVolumeApplet.ShowPopup();
 begin
   if not Assigned(FPopupWindow) then
     CreatePopupWindow();
+
+  ApplyThemeStyle();
 
   if Assigned(FPopupWindow) then
   begin
@@ -686,11 +724,13 @@ var
   startCol, daysInMonth, prevDaysInMonth, d, col, row: Integer;
   cellIndex, prevYear, prevMonth: Integer;
   gridX, colW, rowH, cellX, cellY, bx, by, badgeW, badgeH: Integer;
-  isToday: Boolean;
+  isToday, isDark: Boolean;
 const
   DayNames: array[0..6] of string = ('Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su');
 begin
   if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+
+  isDark := IsDarkTheme();
 
   nowDt := Now();
   DecodeDate(nowDt, curYr, curMo, curDa);
@@ -702,28 +742,56 @@ begin
     FViewMonth := curMo;
   end;
 
-  // 1. White card plate + subtle slate border
-  Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 8.0, 1.0, 1.0, 1.0, 1.0);
-  Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 8.0, 1.0, 0.82, 0.85, 0.90, 1.0);
+  if isDark then
+  begin
+    // 1. Dark card plate + subtle outline
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 8.0, 24 / 255, 25 / 255, 38 / 255, 0.98);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 8.0, 1.0, 69 / 255, 71 / 255, 90 / 255, 0.80);
 
-  // 2. Header background band (subtle light tint for top clock area)
-  Canvas.DrawRoundedRect(1, 1, Sender.Width - 2, 65, 7.0, 0.97, 0.98, 0.99, 1.0);
-  Canvas.DrawLine(12, 66, Sender.Width - 12, 66, 1.0, 0.88, 0.91, 0.94, 1.0);
+    // 2. Header background band (top clock area)
+    Canvas.DrawRoundedRect(1, 1, Sender.Width - 2, 65, 7.0, 36 / 255, 39 / 255, 58 / 255, 1.0);
+    Canvas.DrawLine(12, 66, Sender.Width - 12, 66, 1.0, 49 / 255, 50 / 255, 68 / 255, 0.80);
 
-  // 3. Digital Clock in dark slate (large font if available)
-  timeStr := FormatDateTime('hh:nn:ss', nowDt);
-  if Assigned(FClockFont) and FClockFont.Valid then
-    Canvas.DrawText(20, 18, timeStr, 0.06, 0.09, 0.16, FClockFont.Handle)
+    // 3. Digital Clock in bright text
+    timeStr := FormatDateTime('hh:nn:ss', nowDt);
+    if Assigned(FClockFont) and FClockFont.Valid then
+      Canvas.DrawText(20, 18, timeStr, 0.85, 0.88, 0.95, FClockFont.Handle)
+    else
+      Canvas.DrawText(20, 18, timeStr, 0.85, 0.88, 0.95);
+
+    // 4. Formatted Date subtitle
+    dateStr := FormatDateTime('dddd, d mmmm yyyy', nowDt);
+    Canvas.DrawText(20, 44, dateStr, 147 / 255, 153 / 255, 178 / 255);
+
+    // 5. Month & Year Title
+    monthYearStr := FormatDateTime('mmmm yyyy', EncodeDate(FViewYear, FViewMonth, 1));
+    Canvas.DrawTextCentered(40, 73, Sender.Width - 80, 26, monthYearStr, 0.85, 0.88, 0.95);
+  end
   else
-    Canvas.DrawText(20, 18, timeStr, 0.06, 0.09, 0.16);
+  begin
+    // 1. White card plate + subtle slate border
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 8.0, 1.0, 1.0, 1.0, 1.0);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 8.0, 1.0, 0.82, 0.85, 0.90, 1.0);
 
-  // 4. Formatted Date subtitle in medium slate
-  dateStr := FormatDateTime('dddd, d mmmm yyyy', nowDt);
-  Canvas.DrawText(20, 44, dateStr, 0.39, 0.45, 0.55);
+    // 2. Header background band (subtle light tint for top clock area)
+    Canvas.DrawRoundedRect(1, 1, Sender.Width - 2, 65, 7.0, 0.97, 0.98, 0.99, 1.0);
+    Canvas.DrawLine(12, 66, Sender.Width - 12, 66, 1.0, 0.88, 0.91, 0.94, 1.0);
 
-  // 5. Month & Year Title in Navigation row (centered, click returns to Today)
-  monthYearStr := FormatDateTime('mmmm yyyy', EncodeDate(FViewYear, FViewMonth, 1));
-  Canvas.DrawTextCentered(40, 73, Sender.Width - 80, 26, monthYearStr, 0.12, 0.16, 0.23);
+    // 3. Digital Clock in dark slate (large font if available)
+    timeStr := FormatDateTime('hh:nn:ss', nowDt);
+    if Assigned(FClockFont) and FClockFont.Valid then
+      Canvas.DrawText(20, 18, timeStr, 0.06, 0.09, 0.16, FClockFont.Handle)
+    else
+      Canvas.DrawText(20, 18, timeStr, 0.06, 0.09, 0.16);
+
+    // 4. Formatted Date subtitle in medium slate
+    dateStr := FormatDateTime('dddd, d mmmm yyyy', nowDt);
+    Canvas.DrawText(20, 44, dateStr, 0.39, 0.45, 0.55);
+
+    // 5. Month & Year Title in Navigation row (centered, click returns to Today)
+    monthYearStr := FormatDateTime('mmmm yyyy', EncodeDate(FViewYear, FViewMonth, 1));
+    Canvas.DrawTextCentered(40, 73, Sender.Width - 80, 26, monthYearStr, 0.12, 0.16, 0.23);
+  end;
 
   // 6. Day of week names header
   gridX := 14;
@@ -733,10 +801,20 @@ begin
   for col := 0 to 6 do
   begin
     cellX := gridX + col * colW;
-    if col >= 5 then
-      Canvas.DrawTextCentered(cellX, 104, colW, 18, DayNames[col], 0.30, 0.35, 0.44)
+    if isDark then
+    begin
+      if col >= 5 then
+        Canvas.DrawTextCentered(cellX, 104, colW, 18, DayNames[col], 186 / 255, 194 / 255, 222 / 255)
+      else
+        Canvas.DrawTextCentered(cellX, 104, colW, 18, DayNames[col], 147 / 255, 153 / 255, 178 / 255);
+    end
     else
-      Canvas.DrawTextCentered(cellX, 104, colW, 18, DayNames[col], 0.45, 0.50, 0.60);
+    begin
+      if col >= 5 then
+        Canvas.DrawTextCentered(cellX, 104, colW, 18, DayNames[col], 0.30, 0.35, 0.44)
+      else
+        Canvas.DrawTextCentered(cellX, 104, colW, 18, DayNames[col], 0.45, 0.50, 0.60);
+    end;
   end;
 
   // 7. Days Grid: Full 6-week matrix (42 cells: 6 rows * 7 columns)
@@ -763,7 +841,10 @@ begin
     d := prevDaysInMonth - (startCol - 1 - col);
     cellX := gridX + col * colW;
     cellY := 126;
-    Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.70, 0.74, 0.80);
+    if isDark then
+      Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 88 / 255, 91 / 255, 112 / 255)
+    else
+      Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.70, 0.74, 0.80);
   end;
 
   // B. Draw current viewed month days
@@ -782,12 +863,23 @@ begin
     begin
       bx := cellX + (colW - badgeW) div 2;
       by := cellY + (rowH - badgeH) div 2;
-      Canvas.DrawRoundedRect(bx, by, badgeW, badgeH, 6.0, 0.15, 0.39, 0.92, 1.0);
-      Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 1.0, 1.0, 1.0);
+      if isDark then
+      begin
+        Canvas.DrawRoundedRect(bx, by, badgeW, badgeH, 6.0, 137 / 255, 180 / 255, 250 / 255, 1.0);
+        Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 17 / 255, 17 / 255, 27 / 255);
+      end
+      else
+      begin
+        Canvas.DrawRoundedRect(bx, by, badgeW, badgeH, 6.0, 0.15, 0.39, 0.92, 1.0);
+        Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 1.0, 1.0, 1.0);
+      end;
     end
     else
     begin
-      Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.12, 0.16, 0.23);
+      if isDark then
+        Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.85, 0.88, 0.95)
+      else
+        Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.12, 0.16, 0.23);
     end;
   end;
 
@@ -799,7 +891,10 @@ begin
     row := cellIndex div 7;
     cellX := gridX + col * colW;
     cellY := 126 + row * rowH;
-    Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.70, 0.74, 0.80);
+    if isDark then
+      Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 88 / 255, 91 / 255, 112 / 255)
+    else
+      Canvas.DrawTextCentered(cellX, cellY, colW, rowH, IntToStr(d), 0.70, 0.74, 0.80);
     Inc(d);
   end;
 end;
@@ -865,6 +960,8 @@ begin
   FNextBtn.Flat := True;
   FNextBtn.CornerRadius := 4.0;
   FNextBtn.OnClick := @HandleNextClick;
+
+  ApplyThemeStyle();
 end;
 
 procedure TShellClockApplet.DestroyPopupWindow();
@@ -945,6 +1042,18 @@ begin
   end;
 end;
 
+procedure TShellClockApplet.ApplyThemeStyle();
+begin
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+  if Assigned(FPrevBtn) then
+    FPrevBtn.Invalidate();
+  if Assigned(FNextBtn) then
+    FNextBtn.Invalidate();
+  if Assigned(FPopupWindow) then
+    FPopupWindow.Invalidate();
+end;
+
 procedure TShellClockApplet.ShowPopup();
 var
   curY, curM, curD: Word;
@@ -955,6 +1064,8 @@ begin
 
   if not Assigned(FPopupWindow) then
     CreatePopupWindow();
+
+  ApplyThemeStyle();
 
   if Assigned(FPopupWindow) then
   begin

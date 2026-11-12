@@ -611,6 +611,9 @@ begin
   if Assigned(FVolumeApplet) then
     FVolumeApplet.ApplyThemeStyle();
 
+  if Assigned(FClockApplet) then
+    FClockApplet.ApplyThemeStyle();
+
   if Assigned(FSessionApplet) then
     FSessionApplet.ApplyThemeStyle();
 

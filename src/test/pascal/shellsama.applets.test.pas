@@ -26,6 +26,7 @@ type
     procedure TestClockAppletLifecycle();
     procedure TestSessionAppletCreationAndMenu();
     procedure TestSessionAppletBounds();
+    procedure TestAppletsDarkModeTheme();
   end;
 
 implementation
@@ -195,6 +196,55 @@ begin
   AssertEquals('Session button Y updated', 2, FSessionApplet.Button.Y);
   AssertEquals('Session button W updated', 34, FSessionApplet.Button.Width);
   AssertEquals('Session button H updated', 30, FSessionApplet.Button.Height);
+end;
+
+procedure TAppletsTest.TestAppletsDarkModeTheme();
+var
+  savedDark: Boolean;
+begin
+  savedDark := FtApp().DarkMode;
+  try
+    // Test opening popups in dark mode
+    FtApp().DarkMode := True;
+    FVolumeApplet.ShowPopup();
+    AssertTrue('Volume popup open in dark mode', FVolumeApplet.IsPopupOpen());
+    AssertNotNull('Volume popup window exists in dark mode', FVolumeApplet.PopupWindow);
+
+    FClockApplet.ShowPopup();
+    AssertTrue('Clock popup open in dark mode', FClockApplet.IsPopupOpen());
+    AssertNotNull('Clock popup window exists in dark mode', FClockApplet.PopupWindow);
+
+    // Apply theme styling updates popups without error
+    FVolumeApplet.ApplyThemeStyle();
+    FClockApplet.ApplyThemeStyle();
+    AssertTrue('Volume popup remains open after ApplyThemeStyle', FVolumeApplet.IsPopupOpen());
+    AssertTrue('Clock popup remains open after ApplyThemeStyle', FClockApplet.IsPopupOpen());
+
+    // Switch to light mode and apply theme style
+    FtApp().DarkMode := False;
+    FVolumeApplet.ApplyThemeStyle();
+    FClockApplet.ApplyThemeStyle();
+    AssertTrue('Volume popup remains open after switching to light mode', FVolumeApplet.IsPopupOpen());
+    AssertTrue('Clock popup remains open after switching to light mode', FClockApplet.IsPopupOpen());
+
+    // Hide popups
+    FVolumeApplet.HidePopup();
+    FClockApplet.HidePopup();
+    AssertFalse('Volume popup closed', FVolumeApplet.IsPopupOpen());
+    AssertFalse('Clock popup closed', FClockApplet.IsPopupOpen());
+
+    // Reopen in dark mode from closed state
+    FtApp().DarkMode := True;
+    FVolumeApplet.ShowPopup();
+    FClockApplet.ShowPopup();
+    AssertTrue('Volume popup reopened in dark mode', FVolumeApplet.IsPopupOpen());
+    AssertTrue('Clock popup reopened in dark mode', FClockApplet.IsPopupOpen());
+
+    FVolumeApplet.HidePopup();
+    FClockApplet.HidePopup();
+  finally
+    FtApp().DarkMode := savedDark;
+  end;
 end;
 
 initialization
