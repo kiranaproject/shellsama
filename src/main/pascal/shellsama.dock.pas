@@ -713,7 +713,7 @@ end;
 
 procedure TShellDock.LayoutButtons();
 var
-  i, iconX, iconY, x, wantW, btnSize, gap, total: Integer;
+  i, k, iconX, iconY, x, wantW, btnSize, gap, total: Integer;
   opacity: Double;
   iconBmp: TFtBitmap;
 begin
@@ -825,6 +825,9 @@ begin
     // No toggled plate: the dot underneath says whether the app is running and which
     // app has focus, so a filled button on top of that is redundant and heavy.
     FEntries[i].Button.Toggled := False;
+
+    for k := 0 to High(FEntries[i].Windows) do
+      SetWindowIconGeometry(FEntries[i].Windows[k], PanelX() + x, PanelY() + iconY, btnSize, btnSize);
 
     // The running indicator is drawn by the button's own paint overlay, not by a
     // child widget: a child at the bottom of the stack is covered by its siblings, and

@@ -91,6 +91,7 @@ type
     FAtomWMName               : Cardinal;
     FAtomWMClass              : Cardinal;
     FAtomNetWmPid             : Cardinal;
+    FAtomNetWmIconGeometry    : Cardinal;
 
     // Window icon cache
     FWindowIconCache          : array of TWindowIconItem;
@@ -175,6 +176,8 @@ type
     procedure RestoreWindow(AWin: Cardinal);
     procedure CloseWindow(AWin: Cardinal);
     procedure OnTaskClicked(AWin: Cardinal);
+    procedure SetWindowIconGeometry(AWin: Cardinal; AX, AY, AWidth, AHeight: Integer);
+    procedure ClearWindowIconGeometry(AWin: Cardinal);
 
     // Virtual: the base class calls these when it sets the window up, so a
     // subclass with different geometry (a dock) must be able to answer for itself.
@@ -542,6 +545,7 @@ begin
   FAtomWMName                := InternAtom(FConn, 'WM_NAME');
   FAtomWMClass               := InternAtom(FConn, 'WM_CLASS');
   FAtomNetWmPid              := InternAtom(FConn, '_NET_WM_PID');
+  FAtomNetWmIconGeometry     := InternAtom(FConn, '_NET_WM_ICON_GEOMETRY');
 end;
 
 function TShellTaskSurface.TopInset(): Integer;
@@ -1455,6 +1459,7 @@ begin
       FTasks[i].Button.ClearIcon();
 
     FTasks[i].Button.Toggled := FTasks[i].IsActive;
+    SetWindowIconGeometry(FTasks[i].Window, PanelX() + btnX, PanelY() + 3, btnW, 32);
   end;
 
   // Repaint the task area explicitly.
@@ -1681,6 +1686,27 @@ begin
   xcb_send_event(FConn, 0, FRootWindow,
                  XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT or XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
                  PAnsiChar(@ev));
+  xcb_flush(FConn);
+end;
+
+procedure TShellTaskSurface.SetWindowIconGeometry(AWin: Cardinal; AX, AY, AWidth, AHeight: Integer);
+var
+  geom: array[0..3] of Cardinal;
+begin
+  if (FConn = nil) or (AWin = 0) or (FAtomNetWmIconGeometry = 0) then Exit;
+  geom[0] := AX;
+  geom[1] := AY;
+  geom[2] := AWidth;
+  geom[3] := AHeight;
+  xcb_change_property(FConn, XCB_PROP_MODE_REPLACE, AWin,
+                      FAtomNetWmIconGeometry, XCB_ATOM_CARDINAL, 32, 4, @geom[0]);
+  xcb_flush(FConn);
+end;
+
+procedure TShellTaskSurface.ClearWindowIconGeometry(AWin: Cardinal);
+begin
+  if (FConn = nil) or (AWin = 0) or (FAtomNetWmIconGeometry = 0) then Exit;
+  xcb_delete_property(FConn, AWin, FAtomNetWmIconGeometry);
   xcb_flush(FConn);
 end;
 
