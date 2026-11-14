@@ -46,6 +46,10 @@ type
     Button   : TFtButton;
     Menu     : TFtPopupMenu;
     MenuPin  : TFtMenuItem;
+    MenuMinimize: TFtMenuItem;
+    MenuMaximize: TFtMenuItem;
+    MenuClose   : TFtMenuItem;
+    MenuWindow  : Cardinal;
   end;
 
   TShellDock = class(TShellBottomPanel)
@@ -81,6 +85,8 @@ type
     function IndexOfKey(const AAppKey: string): Integer;
     procedure HandleEntryClick(Sender: TFtButton);
     procedure HandleEntryMenuPin(Sender: TFtMenuItem);
+    procedure UpdateEntryMenu(AIndex: Integer);
+    procedure UpdateEntryMenuStates();
     procedure HandlePreviewActivate(AWindow: Cardinal);
     // Fills the preview tile's context menu with the same window actions the task list
     // offers, so there is one implementation of "minimize, maximize, close".
@@ -157,6 +163,7 @@ type
     procedure DebugClickEntry(AIndex: Integer);
     // Sets window list for a synthetic entry. Test use only.
     procedure DebugSetEntryWindows(AIndex: Integer; const AWins: array of Cardinal);
+    function EntryMenu(AIndex: Integer): TFtPopupMenu;
 
     property IconSize     : Integer        read FIconSize;
     property MaxDockWidth : Integer        read FMaxDockWidth;
@@ -460,6 +467,10 @@ begin
     FEntries[i].Button := nil;
     FEntries[i].Menu := nil;
     FEntries[i].MenuPin := nil;
+    FEntries[i].MenuMinimize := nil;
+    FEntries[i].MenuMaximize := nil;
+    FEntries[i].MenuClose := nil;
+    FEntries[i].MenuWindow := 0;
     FEntries[i].Windows := nil;
   end;
   FLayoutIconSize := FIconSize;
@@ -478,6 +489,7 @@ begin
   SetLength(FEntries[AIndex].Windows, Length(AWins));
   for i := 0 to High(AWins) do
     FEntries[AIndex].Windows[i] := AWins[i];
+  UpdateEntryMenu(AIndex);
 end;
 
 function TShellDock.LayoutIconSize(): Integer;
@@ -523,6 +535,13 @@ begin
   Result := 0;
   if (AIndex >= 0) and (AIndex < Length(FEntries)) then
     Result := Length(FEntries[AIndex].Windows);
+end;
+
+function TShellDock.EntryMenu(AIndex: Integer): TFtPopupMenu;
+begin
+  Result := nil;
+  if (AIndex >= 0) and (AIndex < Length(FEntries)) then
+    Result := FEntries[AIndex].Menu;
 end;
 
 function TShellDock.IndexOfKey(const AAppKey: string): Integer;
@@ -572,6 +591,10 @@ begin
     FEntries[j].Button := nil;
     FEntries[j].Menu := nil;
     FEntries[j].MenuPin := nil;
+    FEntries[j].MenuMinimize := nil;
+    FEntries[j].MenuMaximize := nil;
+    FEntries[j].MenuClose := nil;
+    FEntries[j].MenuWindow := 0;
   end;
 
   winCount := TaskCount;
@@ -598,6 +621,10 @@ begin
       FEntries[j].Button := nil;
       FEntries[j].Menu := nil;
       FEntries[j].MenuPin := nil;
+      FEntries[j].MenuMinimize := nil;
+      FEntries[j].MenuMaximize := nil;
+      FEntries[j].MenuClose := nil;
+      FEntries[j].MenuWindow := 0;
     end;
 
     k := Length(FEntries[j].Windows);
@@ -804,27 +831,7 @@ begin
     FEntries[i].Button.Tag := i;
     FEntries[i].Button.Caption := FEntries[i].Title;
 
-    if FEntries[i].Menu = nil then
-    begin
-      FEntries[i].Menu := TFtPopupMenu.Create(FWindow);
-      if FEntries[i].Menu <> nil then
-      begin
-        FEntries[i].MenuPin := FEntries[i].Menu.AddItem('Pin to dock', @HandleEntryMenuPin);
-        if Assigned(FEntries[i].MenuPin) then
-          FEntries[i].MenuPin.Tag := i;
-      end;
-    end
-    else if Assigned(FEntries[i].MenuPin) then
-    begin
-      FEntries[i].MenuPin.Tag := i;
-      if FEntries[i].Pinned and FDockApps.HasDesktopEntry(FEntries[i].AppKey) then
-        FEntries[i].MenuPin.Caption := 'Unpin from dock'
-      else if FDockApps.HasDesktopEntry(FEntries[i].AppKey) then
-        FEntries[i].MenuPin.Caption := 'Pin to dock';
-    end;
-
-    if Assigned(FEntries[i].Menu) then
-      FEntries[i].Button.ContextMenuHandle := FEntries[i].Menu.Handle;
+    UpdateEntryMenu(i);
 
     iconBmp := IconForApp(FEntries[i].AppKey, btnSize);
     if Assigned(iconBmp) then
@@ -1068,6 +1075,7 @@ begin
     FPreviewKey := '';
     FPreviewWins := nil;
   end;
+  UpdateEntryMenuStates();
 end;
 
 procedure TShellDock.BuildPreviewTileMenu(AWindow: Cardinal; AParent: TFtWidget);
@@ -1109,6 +1117,136 @@ begin
 end;
 
 
+procedure TShellDock.UpdateEntryMenu(AIndex: Integer);
+var
+  win: Cardinal;
+  hasDesktop: Boolean;
+begin
+  if (AIndex < 0) or (AIndex >= Length(FEntries)) then Exit;
+
+  if FEntries[AIndex].Menu = nil then
+    FEntries[AIndex].Menu := TFtPopupMenu.Create(FWindow);
+
+  if FEntries[AIndex].Menu = nil then Exit;
+
+  hasDesktop := FDockApps.HasDesktopEntry(FEntries[AIndex].AppKey);
+
+  if Length(FEntries[AIndex].Windows) = 1 then
+  begin
+    win := FEntries[AIndex].Windows[0];
+
+    // If already built for this window, update dynamic captions
+    if (FEntries[AIndex].MenuWindow = win) and (FEntries[AIndex].MenuMinimize <> nil) then
+    begin
+      if IsWindowMinimized(win) then
+        FEntries[AIndex].MenuMinimize.Caption := 'Restore'
+      else
+        FEntries[AIndex].MenuMinimize.Caption := 'Minimize';
+
+      if Assigned(FEntries[AIndex].MenuMaximize) then
+      begin
+        if IsWindowMaximized(win) then
+          FEntries[AIndex].MenuMaximize.Caption := 'Restore'
+        else
+          FEntries[AIndex].MenuMaximize.Caption := 'Maximize';
+      end;
+
+      if Assigned(FEntries[AIndex].MenuPin) then
+      begin
+        FEntries[AIndex].MenuPin.Tag := AIndex;
+        if FEntries[AIndex].Pinned and hasDesktop then
+          FEntries[AIndex].MenuPin.Caption := 'Unpin from dock'
+        else if hasDesktop then
+          FEntries[AIndex].MenuPin.Caption := 'Pin to dock';
+      end;
+    end
+    else
+    begin
+      // Full rebuild for single window: Minimize, Maximize, separator, Close, separator, Pin/Unpin
+      FEntries[AIndex].Menu.Clear();
+
+      AddWindowActions(FEntries[AIndex].Menu, win);
+
+      FEntries[AIndex].MenuMinimize := FindWindowAction(FEntries[AIndex].Menu, 'Minimize');
+      if (FEntries[AIndex].MenuMinimize <> nil) and IsWindowMinimized(win) then
+        FEntries[AIndex].MenuMinimize.Caption := 'Restore';
+
+      FEntries[AIndex].MenuMaximize := FindWindowAction(FEntries[AIndex].Menu, 'Maximize');
+      if (FEntries[AIndex].MenuMaximize <> nil) and IsWindowMaximized(win) then
+        FEntries[AIndex].MenuMaximize.Caption := 'Restore';
+
+      FEntries[AIndex].MenuClose := FindWindowAction(FEntries[AIndex].Menu, 'Close');
+
+      if hasDesktop then
+      begin
+        FEntries[AIndex].Menu.AddSeparator();
+        if FEntries[AIndex].Pinned then
+          FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Unpin from dock', @HandleEntryMenuPin)
+        else
+          FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Pin to dock', @HandleEntryMenuPin);
+        if Assigned(FEntries[AIndex].MenuPin) then
+          FEntries[AIndex].MenuPin.Tag := AIndex;
+      end
+      else
+        FEntries[AIndex].MenuPin := nil;
+
+      FEntries[AIndex].MenuWindow := win;
+    end;
+  end
+  else
+  begin
+    // 0 or >1 windows: no window-specific actions on dock icon
+    if (FEntries[AIndex].MenuWindow <> 0) or (FEntries[AIndex].MenuMinimize <> nil) then
+    begin
+      FEntries[AIndex].Menu.Clear();
+      FEntries[AIndex].MenuMinimize := nil;
+      FEntries[AIndex].MenuMaximize := nil;
+      FEntries[AIndex].MenuClose := nil;
+      FEntries[AIndex].MenuPin := nil;
+
+      if hasDesktop then
+      begin
+        if FEntries[AIndex].Pinned then
+          FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Unpin from dock', @HandleEntryMenuPin)
+        else
+          FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Pin to dock', @HandleEntryMenuPin);
+        if Assigned(FEntries[AIndex].MenuPin) then
+          FEntries[AIndex].MenuPin.Tag := AIndex;
+      end;
+
+      FEntries[AIndex].MenuWindow := 0;
+    end
+    else if Assigned(FEntries[AIndex].MenuPin) then
+    begin
+      FEntries[AIndex].MenuPin.Tag := AIndex;
+      if FEntries[AIndex].Pinned and hasDesktop then
+        FEntries[AIndex].MenuPin.Caption := 'Unpin from dock'
+      else if hasDesktop then
+        FEntries[AIndex].MenuPin.Caption := 'Pin to dock';
+    end
+    else if hasDesktop then
+    begin
+      if FEntries[AIndex].Pinned then
+        FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Unpin from dock', @HandleEntryMenuPin)
+      else
+        FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Pin to dock', @HandleEntryMenuPin);
+      if Assigned(FEntries[AIndex].MenuPin) then
+        FEntries[AIndex].MenuPin.Tag := AIndex;
+    end;
+  end;
+
+  if Assigned(FEntries[AIndex].Button) then
+    FEntries[AIndex].Button.ContextMenuHandle := FEntries[AIndex].Menu.Handle;
+end;
+
+procedure TShellDock.UpdateEntryMenuStates();
+var
+  i: Integer;
+begin
+  for i := 0 to High(FEntries) do
+    UpdateEntryMenu(i);
+end;
+
 procedure TShellDock.HandleEntryMenuPin(Sender: TFtMenuItem);
 var
   idx: Integer;
@@ -1125,6 +1263,7 @@ begin
   else if FDockApps.Pin(FEntries[idx].AppKey) then
     FEntries[idx].Pinned := True;
 
+  UpdateEntryMenu(idx);
   FWindow.Invalidate();
 end;
 
@@ -1156,6 +1295,7 @@ begin
 
   RefreshPixmaps();
   SyncPreview();
+  UpdateEntryMenuStates();
 
   // Live previews. Cheap enough to run here: a full eight-tile sheet measures ~2.3ms
   // (scripts/probe-refresh-cost.py), and the popup only asks for one every 100ms.

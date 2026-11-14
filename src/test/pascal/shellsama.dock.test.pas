@@ -38,6 +38,7 @@ type
     procedure TestScrollingIsClampedAtBothEnds();
     procedure TestDockFollowsDarkAndLightTheme();
     procedure TestSingleWindowClickMinimizesWhenActive();
+    procedure TestDockEntryMenuForSingleWindowOffersWindowActions();
   end;
 
 type
@@ -521,6 +522,86 @@ begin
       xcb_delete_property(dockAcc.FConn, dockAcc.FRootWindow, dockAcc.FAtomNetActiveWindow);
       xcb_flush(dockAcc.FConn);
     end;
+  end;
+end;
+
+procedure TDockTest.TestDockEntryMenuForSingleWindowOffersWindowActions();
+var
+  menu: TFtPopupMenu;
+  i: Integer;
+  captions: TStringList;
+  item: TFtMenuItem;
+begin
+  AssertNotNull('Dock instance', FDock);
+  FDock.DebugPopulateEntries(2);
+
+  // 1. With zero windows, menu has no window actions
+  menu := FDock.EntryMenu(0);
+  AssertNotNull('Entry menu exists', menu);
+  captions := TStringList.Create();
+  try
+    for i := 0 to menu.ItemCount - 1 do
+    begin
+      item := menu.Items[i];
+      if (item <> nil) and (item.Caption <> '') then
+        captions.Add(item.Caption);
+    end;
+    AssertEquals('Zero windows has no Minimize action', -1, captions.IndexOf('Minimize'));
+    AssertEquals('Zero windows has no Maximize action', -1, captions.IndexOf('Maximize'));
+    AssertEquals('Zero windows has no Close action', -1, captions.IndexOf('Close'));
+
+    // 2. Set single window on Entry 0 -> window actions added
+    FDock.DebugSetEntryWindows(0, [1234]);
+    menu := FDock.EntryMenu(0);
+    AssertNotNull('Entry menu exists after setting window', menu);
+
+    captions.Clear();
+    for i := 0 to menu.ItemCount - 1 do
+    begin
+      item := menu.Items[i];
+      if (item = nil) or (item.Caption = '') then Continue;
+      if item.Caption = '-' then
+        captions.Add('<separator>')
+      else
+        captions.Add(item.Caption);
+    end;
+
+    AssertTrue('Single window has Minimize: ' + captions.CommaText, captions.IndexOf('Minimize') >= 0);
+    AssertTrue('Single window has Maximize: ' + captions.CommaText, captions.IndexOf('Maximize') >= 0);
+    AssertTrue('Single window has Close: ' + captions.CommaText, captions.IndexOf('Close') >= 0);
+    AssertTrue('Minimize is before Maximize', captions.IndexOf('Minimize') < captions.IndexOf('Maximize'));
+    AssertTrue('Maximize is before Close', captions.IndexOf('Maximize') < captions.IndexOf('Close'));
+
+    // 3. Set multiple windows on Entry 0 -> window actions removed from dock icon menu
+    FDock.DebugSetEntryWindows(0, [1234, 5678]);
+    menu := FDock.EntryMenu(0);
+    captions.Clear();
+    for i := 0 to menu.ItemCount - 1 do
+    begin
+      item := menu.Items[i];
+      if (item <> nil) and (item.Caption <> '') then
+        captions.Add(item.Caption);
+    end;
+    AssertEquals('Multiple windows has no Minimize on dock icon', -1, captions.IndexOf('Minimize'));
+    AssertEquals('Multiple windows has no Maximize on dock icon', -1, captions.IndexOf('Maximize'));
+    AssertEquals('Multiple windows has no Close on dock icon', -1, captions.IndexOf('Close'));
+
+    // 4. Set back to single window -> window actions reappear
+    FDock.DebugSetEntryWindows(0, [1234]);
+    menu := FDock.EntryMenu(0);
+    captions.Clear();
+    for i := 0 to menu.ItemCount - 1 do
+    begin
+      item := menu.Items[i];
+      if (item = nil) or (item.Caption = '') then Continue;
+      if item.Caption = '-' then
+        captions.Add('<separator>')
+      else
+        captions.Add(item.Caption);
+    end;
+    AssertTrue('Window actions restored for single window: ' + captions.CommaText, captions.IndexOf('Minimize') >= 0);
+  finally
+    captions.Free();
   end;
 end;
 
