@@ -104,6 +104,7 @@ begin
 
   // 3. Clock text label
   AssertNotNull('Clock text widget must be created', FPanel.ClockWidget);
+  AssertTrue('Clock button must be wide enough to show date and time without truncation', FPanel.ClockWidget.Width >= 200);
 
   // 4. Tray widget
   AssertNotNull('Tray widget must be created', FPanel.TrayWidget);
@@ -135,6 +136,7 @@ begin
   // UpdateClock should run without exception
   FPanel.UpdateClock();
   AssertNotNull('Clock widget still valid', FPanel.ClockWidget);
+  AssertTrue('Clock button caption must not end with ellipsis', Pos('...', FPanel.ClockApplet.Button.Caption) = 0);
 end;
 
 procedure TTopPanelTest.TestLauncherSync();

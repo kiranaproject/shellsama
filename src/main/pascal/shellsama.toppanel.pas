@@ -129,6 +129,14 @@ const
   PANEL_TIMER_MS = 250;
   PANEL_ANIM_TIMER_MS = 16;
 
+  TOPPANEL_SHOW_DESKTOP_W = 32;
+  TOPPANEL_SESSION_W      = 32;
+  TOPPANEL_CLOCK_W        = 216;
+  TOPPANEL_VOLUME_W       = 36;
+  TOPPANEL_GAP            = 4;
+  TOPPANEL_TRAY_GAP       = 8;
+  TOPPANEL_RIGHT_INSET    = 4;
+
   SVG_DESKTOP_ICON_LIGHT =
     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_PANEL_ICON_COLOR_LIGHT + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
     '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>' +
@@ -346,7 +354,9 @@ begin
   if Assigned(FTray) then
   begin
     trayW := FTray.Width;
-    trayX := (FPanelWidth - 260) - trayW;
+    trayX := (FPanelWidth - (TOPPANEL_RIGHT_INSET + TOPPANEL_SHOW_DESKTOP_W + TOPPANEL_GAP +
+                             TOPPANEL_SESSION_W + TOPPANEL_GAP + TOPPANEL_CLOCK_W +
+                             TOPPANEL_GAP + TOPPANEL_VOLUME_W + TOPPANEL_TRAY_GAP)) - trayW;
     FTray.SetPosition(trayX, (FPanelHeight - FTray.IconSize) div 2);
   end;
 end;
@@ -499,7 +509,9 @@ begin
   FLauncherBtn.OnClick := @HandleLauncherButtonClick;
 
   // 2. Show Desktop button on the extreme right
-  FShowDesktopBtn := TFtButton.Create(FWindow, FPanelWidth - 36, 3, 32, 32, '');
+  FShowDesktopBtn := TFtButton.Create(FWindow,
+    FPanelWidth - TOPPANEL_RIGHT_INSET - TOPPANEL_SHOW_DESKTOP_W,
+    3, TOPPANEL_SHOW_DESKTOP_W, 32, '');
   FShowDesktopBtn.Flat := True;
   FShowDesktopBtn.CornerRadius := 6.0;
   FShowDesktopBtn.IconPosition := ftipOnly;
@@ -508,18 +520,24 @@ begin
   FShowDesktopBtn.Visible := ShellSettings().ShowDesktopButton;
 
   // 3. Power / Session Applet (Shutdown button)
-  FSessionApplet := TShellSessionApplet.Create(FWindow, FPanelWidth - 72, 3, 32, 32);
+  FSessionApplet := TShellSessionApplet.Create(FWindow,
+    FPanelWidth - TOPPANEL_RIGHT_INSET - TOPPANEL_SHOW_DESKTOP_W - TOPPANEL_GAP - TOPPANEL_SESSION_W,
+    3, TOPPANEL_SESSION_W, 32);
   FSessionApplet.Button.OnClick := @HandleSessionButtonClick;
   FSessionApplet.Button.OnHover := @HandleSessionButtonHover;
 
   // 4. Clock Applet (Date & Time + Calendar)
-  FClockApplet := TShellClockApplet.Create(FWindow, FPanelWidth - 212, 3, 136, 32);
+  FClockApplet := TShellClockApplet.Create(FWindow,
+    FPanelWidth - TOPPANEL_RIGHT_INSET - TOPPANEL_SHOW_DESKTOP_W - TOPPANEL_GAP - TOPPANEL_SESSION_W - TOPPANEL_GAP - TOPPANEL_CLOCK_W,
+    3, TOPPANEL_CLOCK_W, 32);
   FClockApplet.Button.OnClick := @HandleClockButtonClick;
   FClockApplet.Button.OnHover := @HandleClockButtonHover;
   FClockApplet.OnDismiss := @HandleAppletDismiss;
 
   // 5. Volume Applet
-  FVolumeApplet := TShellVolumeApplet.Create(FWindow, FPanelWidth - 252, 3, 36, 32);
+  FVolumeApplet := TShellVolumeApplet.Create(FWindow,
+    FPanelWidth - TOPPANEL_RIGHT_INSET - TOPPANEL_SHOW_DESKTOP_W - TOPPANEL_GAP - TOPPANEL_SESSION_W - TOPPANEL_GAP - TOPPANEL_CLOCK_W - TOPPANEL_GAP - TOPPANEL_VOLUME_W,
+    3, TOPPANEL_VOLUME_W, 32);
   FVolumeApplet.Button.OnClick := @HandleVolumeButtonClick;
   FVolumeApplet.Button.OnHover := @HandleVolumeButtonHover;
   FVolumeApplet.OnDismiss := @HandleAppletDismiss;
