@@ -22,6 +22,7 @@ type
     procedure TestSetSolidColor();
     procedure TestSetWallpaperAndFallback();
     procedure TestDesktopVisibilityToggle();
+    procedure TestContextMenuBinding();
   end;
 
 implementation
@@ -115,6 +116,18 @@ begin
 
   FDesktop.Hide();
   AssertFalse('Desktop is not visible after Hide()', FDesktop.IsVisible);
+end;
+
+procedure TDesktopTest.TestContextMenuBinding();
+begin
+  AssertNotNull('Desktop ContextMenu should be created', FDesktop.ContextMenu);
+  AssertTrue('ContextMenu should have items', FDesktop.ContextMenu.ItemCount > 0);
+  AssertNotNull('DrawingArea ContextMenuHandle should be assigned', FDesktop.DrawingArea.ContextMenuHandle);
+  AssertNotNull('Window ContextMenuHandle should be assigned', FDesktop.Window.ContextMenuHandle);
+  AssertTrue('DrawingArea ContextMenuHandle should match ContextMenu Handle',
+    FDesktop.DrawingArea.ContextMenuHandle = FDesktop.ContextMenu.Handle);
+  AssertTrue('Window ContextMenuHandle should match ContextMenu Handle',
+    FDesktop.Window.ContextMenuHandle = FDesktop.ContextMenu.Handle);
 end;
 
 initialization

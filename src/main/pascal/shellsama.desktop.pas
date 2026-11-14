@@ -55,6 +55,7 @@ type
 
     property Window: TFtWindow read FWindow;
     property DrawingArea: TFtDrawingArea read FDrawingArea;
+    property ContextMenu: TFtPopupMenu read FContextMenu;
     property WallpaperPath: string read FWallpaperPath;
     property WallpaperBitmap: TFtBitmap read FWallpaperBitmap;
     property WallpaperMode: TWallpaperMode read FWallpaperMode write SetWallpaperMode;
@@ -153,7 +154,7 @@ procedure TShellDesktop.SetupContextMenu();
 var
   it: TFtMenuItem;
 begin
-  FContextMenu := TFtPopupMenu.Create(nil);
+  FContextMenu := TFtPopupMenu.Create(FWindow);
   FContextMenu.AddItem('Desktop & Wallpaper Settings...', @HandleOpenSettingsClick);
   FContextMenu.AddItem('Change Wallpaper...', @HandleChangeWallpaperClick);
   FContextMenu.AddSeparator();
@@ -178,6 +179,11 @@ begin
 
   FContextMenu.AddSeparator();
   FContextMenu.AddItem('Open Terminal', @HandleOpenTerminalClick);
+
+  if Assigned(FDrawingArea) and Assigned(FContextMenu) then
+    FDrawingArea.ContextMenuHandle := FContextMenu.Handle;
+  if Assigned(FWindow) and Assigned(FContextMenu) then
+    FWindow.ContextMenuHandle := FContextMenu.Handle;
 end;
 
 procedure TShellDesktop.HandlePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
@@ -264,11 +270,11 @@ end;
 
 procedure TShellDesktop.HandleMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer);
 begin
-  if Button = 3 then // Right click
-  begin
-    if FContextMenu <> nil then
-      FContextMenu.Show(X, Y);
-  end;
+  // Right-click context menu popup is handled natively by ContextMenuHandle binding.
+  // Fallback to manual Show if context menu handle is somehow unbound.
+  if (Button = 3) and Assigned(FContextMenu) and
+     (Assigned(Sender) and (Sender.ContextMenuHandle = nil)) then
+    FContextMenu.Show(X, Y);
 end;
 
 procedure TShellDesktop.HandleChangeWallpaperClick(Sender: TFtMenuItem);
