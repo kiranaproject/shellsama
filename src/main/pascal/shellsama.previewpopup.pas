@@ -47,28 +47,30 @@ type
 
 const
   PREVIEW_PLATE_CSS_DARK =
-    'background-color: rgba(24, 24, 32, 0.92);' +
-    'border-radius: 14px;';
+    'background-color: #27272a;' +
+    'border: 1px solid #3f3f46;' +
+    'border-radius: 6px;';
   PREVIEW_PLATE_CSS_LIGHT =
-    'background-color: rgba(248, 249, 252, 0.94);' +
-    'border-radius: 14px;';
+    'background-color: #ffffff;' +
+    'border: 1px solid #cbd5e1;' +
+    'border-radius: 6px;';
   PREVIEW_PLATE_CSS = PREVIEW_PLATE_CSS_DARK;
 
-  PREVIEW_CAPTION_DARK_R = 0.86;
-  PREVIEW_CAPTION_DARK_G = 0.88;
-  PREVIEW_CAPTION_DARK_B = 0.92;
+  PREVIEW_CAPTION_DARK_R = 244 / 255;
+  PREVIEW_CAPTION_DARK_G = 244 / 255;
+  PREVIEW_CAPTION_DARK_B = 245 / 255;
 
-  PREVIEW_CAPTION_LIGHT_R = 0.12;
-  PREVIEW_CAPTION_LIGHT_G = 0.16;
-  PREVIEW_CAPTION_LIGHT_B = 0.22;
+  PREVIEW_CAPTION_LIGHT_R = 30 / 255;
+  PREVIEW_CAPTION_LIGHT_G = 41 / 255;
+  PREVIEW_CAPTION_LIGHT_B = 59 / 255;
 
   PREVIEW_CAPTION_R = PREVIEW_CAPTION_DARK_R;
   PREVIEW_CAPTION_G = PREVIEW_CAPTION_DARK_G;
   PREVIEW_CAPTION_B = PREVIEW_CAPTION_DARK_B;
 
-  PREVIEW_HOVER_R = 0.35;
-  PREVIEW_HOVER_G = 0.62;
-  PREVIEW_HOVER_B = 0.95;
+  PREVIEW_HOVER_R = 59 / 255;
+  PREVIEW_HOVER_G = 130 / 255;
+  PREVIEW_HOVER_B = 246 / 255;
 
   // 32-bit so the sheet can be transparent outside the tiles. Windows are composited
   // OVER it, so their own alpha is preserved: a terminal with a transparent background
@@ -504,15 +506,15 @@ begin
 
   if isDark then
   begin
-    FWindow.StyleClass := 'preview dark';
+    FWindow.StyleClass := 'menu dark';
     FWindow.Style := PREVIEW_PLATE_CSS_DARK;
-    FWindow.BackgroundOpacity := 0.92;
+    FWindow.BackgroundOpacity := 1.0;
   end
   else
   begin
-    FWindow.StyleClass := 'preview light';
+    FWindow.StyleClass := 'menu light';
     FWindow.Style := PREVIEW_PLATE_CSS_LIGHT;
-    FWindow.BackgroundOpacity := 0.94;
+    FWindow.BackgroundOpacity := 1.0;
   end;
 
   FWindow.Invalidate();
@@ -524,14 +526,12 @@ procedure TShellPreviewPopup.HandlePaint(Sender: TFtDrawingArea; Canvas: TFtCanv
 var
   i: Integer;
   r, t: TPreviewRect;
+  bgR, bgG, bgB: Double;
+  bdR, bdG, bdB: Double;
   capR, capG, capB: Double;
   isDark: Boolean;
 begin
   if Canvas = nil then Exit;
-
-  // One blit: the sheet already holds every tile at its final size.
-  if Assigned(FSheet) then
-    Canvas.DrawImage(0, 0, FSheet, 1.0);
 
   isDark := True;
   if FtIsLibLoaded() then
@@ -539,29 +539,56 @@ begin
 
   if isDark then
   begin
+    // Matching menu.dark theme (#27272a plate, #3f3f46 border, #f4f4f5 text)
+    bgR := 39 / 255;
+    bgG := 39 / 255;
+    bgB := 42 / 255;
+    bdR := 63 / 255;
+    bdG := 63 / 255;
+    bdB := 70 / 255;
     capR := PREVIEW_CAPTION_DARK_R;
     capG := PREVIEW_CAPTION_DARK_G;
     capB := PREVIEW_CAPTION_DARK_B;
   end
   else
   begin
+    // Matching menu light theme (#ffffff plate, #cbd5e1 border, #1e293b text)
+    bgR := 1.0;
+    bgG := 1.0;
+    bgB := 1.0;
+    bdR := 203 / 255;
+    bdG := 213 / 255;
+    bdB := 225 / 255;
     capR := PREVIEW_CAPTION_LIGHT_R;
     capG := PREVIEW_CAPTION_LIGHT_G;
     capB := PREVIEW_CAPTION_LIGHT_B;
   end;
 
+  // 1. Draw solid popup menu plate and border outline (6.0px radius matching menu theme)
+  Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, bgR, bgG, bgB, 1.0);
+  Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, bdR, bdG, bdB, 1.0);
+
+  // 2. Draw thumbnail sheet
+  if Assigned(FSheet) then
+    Canvas.DrawImage(0, 0, FSheet, 1.0);
+
+  // 3. Draw thumbnail borders and title captions
   for i := 0 to High(FWindows) do
   begin
+    r := PreviewTileRect(FLayout, i);
+    Canvas.DrawRoundedRectOutline(r.X, r.Y, r.W, r.H, 4.0, 1.0, bdR, bdG, bdB, 0.7);
+
     t := PreviewTitleRect(FLayout, i);
     Canvas.DrawTextLeft(t.X, t.Y, t.W, t.H, FTitles[i],
                         capR, capG, capB,
                         FCaptionFont.Handle);
   end;
 
+  // 4. Draw hover highlight matching menu item selection
   if (FHover >= 0) and (FHover <= High(FWindows)) then
   begin
     r := PreviewTileRect(FLayout, FHover);
-    Canvas.DrawRoundedRectOutline(r.X, r.Y, r.W, r.H, 8, 2,
+    Canvas.DrawRoundedRectOutline(r.X, r.Y, r.W, r.H, 4.0, 2.0,
                                   PREVIEW_HOVER_R, PREVIEW_HOVER_G, PREVIEW_HOVER_B,
                                   1.0);
   end;

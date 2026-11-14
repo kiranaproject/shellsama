@@ -39,7 +39,7 @@ begin
   AutoShowLauncher := False;
   NoTopPanel := False;
   NoBottomPanel := False;
-  UseDock := False;
+  UseDock := True;
   NoDesktop := False;
   CustomWallpaper := '';
   i := 1;
@@ -57,8 +57,10 @@ begin
       WriteLn('Options:');
       WriteLn('  --show-launcher        Show the application launcher immediately on start');
       WriteLn('  --no-top-panel         Do not display the top status bar panel');
-      WriteLn('  --no-bottom-panel      Do not display the bottom taskbar panel');
-      WriteLn('  --dock                 Replace the bottom taskbar with an icon dock');
+      WriteLn('  --no-bottom-panel      Do not display the bottom panel (dock/taskbar)');
+      WriteLn('  --dock                 Use the icon dock (default)');
+      WriteLn('  --taskbar              Replace the dock with the classic full-width taskbar');
+      WriteLn('  --no-dock              Alias for --taskbar');
       WriteLn('  --no-desktop           Do not display the desktop wallpaper surface');
       WriteLn('  --wallpaper <path>     Load and display the specified wallpaper image');
       WriteLn('  --version, -v          Print version and exit');
@@ -80,6 +82,10 @@ begin
     else if arg = '--dock' then
     begin
       UseDock := True;
+    end
+    else if (arg = '--taskbar') or (arg = '--classic-taskbar') or (arg = '--no-dock') then
+    begin
+      UseDock := False;
     end
     else if arg = '--no-desktop' then
     begin
