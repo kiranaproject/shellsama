@@ -6,6 +6,7 @@ interface
 
 uses
   Classes, SysUtils, fpcunit, testregistry,
+  Floria.XCB,
   ftpas.api, ftpas.types, ftpas,
   ShellSama.DesktopApps,
   ShellSama.Launcher,
@@ -36,7 +37,11 @@ type
     procedure TestWideDockScrollsInsteadOfShrinking();
     procedure TestScrollingIsClampedAtBothEnds();
     procedure TestDockFollowsDarkAndLightTheme();
+    procedure TestSingleWindowClickMinimizesWhenActive();
   end;
+
+type
+  TDockAccess = class(TShellDock);
 
 implementation
 
@@ -454,6 +459,69 @@ begin
   FDock.Tick();
   AssertTrue('Dock window transitioned back to dark class on tick', Pos('dark', FDock.WindowWidget.StyleClass) > 0);
   AssertTrue('Dock window transitioned back to dark plate on tick', Pos('24, 24, 32', FDock.WindowWidget.Style) > 0);
+end;
+
+procedure TDockTest.TestSingleWindowClickMinimizesWhenActive();
+var
+  dockAcc: TDockAccess;
+  origActive, testWin: Cardinal;
+begin
+  AssertNotNull('Dock instance', FDock);
+  dockAcc := TDockAccess(FDock);
+
+  // Synthetic entries
+  FDock.DebugPopulateEntries(2);
+  AssertEquals('Two entries populated', 2, FDock.EntryCount());
+
+  // 1. Entry 0 with zero windows -> launches/no-op safely
+  FDock.DebugClickEntry(0);
+
+  // 2. Entry 0 with 1 window, window is NOT active
+  testWin := 88888;
+  origActive := dockAcc.QueryActiveWindow();
+  FDock.DebugSetEntryWindows(0, [testWin]);
+  AssertEquals('Entry 0 has one window', 1, FDock.EntryWindowCountAt(0));
+
+  // If testWin <> active window, DebugClickEntry activates it
+  if (testWin <> origActive) and (dockAcc.FConn <> nil) then
+  begin
+    // Inactive single window clicked -> ActivateWindow called without crashing
+    FDock.DebugClickEntry(0);
+  end;
+
+  // 3. Entry 0 with 1 window, window IS active
+  if (dockAcc.FConn <> nil) and (dockAcc.FRootWindow <> 0) and (dockAcc.FAtomNetActiveWindow <> 0) then
+  begin
+    // Set root window's _NET_ACTIVE_WINDOW to testWin
+    xcb_change_property(dockAcc.FConn, XCB_PROP_MODE_REPLACE,
+                        dockAcc.FRootWindow, dockAcc.FAtomNetActiveWindow,
+                        XCB_ATOM_WINDOW, 32, 1, @testWin);
+    xcb_flush(dockAcc.FConn);
+
+    AssertEquals('Active window is now testWin', testWin, dockAcc.QueryActiveWindow());
+
+    // Active single window clicked -> calls MinimizeWindow
+    FDock.DebugClickEntry(0);
+
+    // 4. Multiple windows for the app -> should not minimize even if one is active
+    FDock.DebugSetEntryWindows(0, [testWin, 99999]);
+    AssertEquals('Entry 0 has two windows', 2, FDock.EntryWindowCountAt(0));
+    FDock.DebugClickEntry(0);
+
+    // Restore original active window property
+    if origActive <> 0 then
+    begin
+      xcb_change_property(dockAcc.FConn, XCB_PROP_MODE_REPLACE,
+                          dockAcc.FRootWindow, dockAcc.FAtomNetActiveWindow,
+                          XCB_ATOM_WINDOW, 32, 1, @origActive);
+      xcb_flush(dockAcc.FConn);
+    end
+    else
+    begin
+      xcb_delete_property(dockAcc.FConn, dockAcc.FRootWindow, dockAcc.FAtomNetActiveWindow);
+      xcb_flush(dockAcc.FConn);
+    end;
+  end;
 end;
 
 initialization

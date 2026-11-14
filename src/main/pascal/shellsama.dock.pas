@@ -90,7 +90,6 @@ type
     // with. An activation request for a window that has gone is at best a no-op and at
     // worst raises an unrelated application, because X reuses ids.
     procedure SyncPreview();
-    procedure ActivateOrLaunch(const AAppKey: string);
     // Wheel over the dock: buttons 4 and 5 are vertical, 6 and 7 horizontal. The
     // toolkit forwards wheel events from child buttons up to the window, so this sees
     // them wherever the pointer is over an icon.
@@ -153,6 +152,11 @@ type
     function EntryFocused(AIndex: Integer): Boolean;
     function EntryPinned(AIndex: Integer): Boolean;
     function EntryWindowCountAt(AIndex: Integer): Integer;
+    procedure ActivateOrLaunch(const AAppKey: string);
+    // Simulates clicking an entry by index. Test use only.
+    procedure DebugClickEntry(AIndex: Integer);
+    // Sets window list for a synthetic entry. Test use only.
+    procedure DebugSetEntryWindows(AIndex: Integer; const AWins: array of Cardinal);
 
     property IconSize     : Integer        read FIconSize;
     property MaxDockWidth : Integer        read FMaxDockWidth;
@@ -466,6 +470,16 @@ begin
   LayoutButtons();
 end;
 
+procedure TShellDock.DebugSetEntryWindows(AIndex: Integer; const AWins: array of Cardinal);
+var
+  i: Integer;
+begin
+  if (AIndex < 0) or (AIndex >= Length(FEntries)) then Exit;
+  SetLength(FEntries[AIndex].Windows, Length(AWins));
+  for i := 0 to High(AWins) do
+    FEntries[AIndex].Windows[i] := AWins[i];
+end;
+
 function TShellDock.LayoutIconSize(): Integer;
 begin
   Result := FLayoutIconSize;
@@ -776,7 +790,7 @@ begin
     begin
       FEntries[i].Button := TFtButton.Create(FWindow, x, iconY, btnSize, btnSize,
                                              FEntries[i].Title);
-      FEntries[i].Button.IsToggle := True;
+      FEntries[i].Button.IsToggle := False;
       FEntries[i].Button.Flat := True;
       FEntries[i].Button.StyleClass := DOCK_ICON_STYLE_CLASS;
       // A tooltip per icon is redundant: the icon is the label.
@@ -906,11 +920,24 @@ begin
   idx := Integer(Sender.Tag);
   if (idx < 0) or (idx >= Length(FEntries)) then Exit;
 
-  // Several windows: let the user pick one. One window: just activate. None: launch.
+  Sender.Toggled := False;
+
+  // Several windows: let the user pick one. One window: activate or minimize. None: launch.
   if Length(FEntries[idx].Windows) > 1 then
     ShowPreview(FEntries[idx].AppKey)
   else
     ActivateOrLaunch(FEntries[idx].AppKey);
+end;
+
+procedure TShellDock.DebugClickEntry(AIndex: Integer);
+begin
+  if (AIndex < 0) or (AIndex >= Length(FEntries)) then Exit;
+  if FEntries[AIndex].Button <> nil then
+    HandleEntryClick(FEntries[AIndex].Button)
+  else if Length(FEntries[AIndex].Windows) > 1 then
+    ShowPreview(FEntries[AIndex].AppKey)
+  else
+    ActivateOrLaunch(FEntries[AIndex].AppKey);
 end;
 
 procedure TShellDock.ActivateOrLaunch(const AAppKey: string);
@@ -928,7 +955,10 @@ begin
   end;
 
   win := FEntries[idx].Windows[Length(FEntries[idx].Windows) - 1];
-  ActivateWindow(win);
+  if (Length(FEntries[idx].Windows) = 1) and (win = QueryActiveWindow()) then
+    MinimizeWindow(win)
+  else
+    ActivateWindow(win);
 end;
 
 procedure TShellDock.ShowPreview(const AAppKey: string);
@@ -994,6 +1024,9 @@ begin
     centerX := dockX + (PanelWidth() div 2);
     iconTop := dockY;
   end;
+
+  if (FPixmaps = nil) and (FConn <> nil) then
+    FPixmaps := TWindowPixmapStore.Create(FConn);
 
   FPreview.SetLive(FPreviewLive);
   FPreview.Show(wins, titles, FPixmaps, centerX, iconTop, screenW);

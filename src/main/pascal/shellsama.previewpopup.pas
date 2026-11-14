@@ -286,7 +286,7 @@ begin
   // reallocates it when the grid size changes. Freeing it here recreated the bitmap on
   // every refresh, which defeated the caching and left the paint callback reading an
   // object that had just been destroyed.
-  if (FConn = nil) or (FRoot = 0) or (FLayout.Width <= 0) then Exit;
+  if (FConn = nil) or (FRoot = 0) or (FLayout.Width <= 0) or (AStore = nil) then Exit;
 
   // The sheet's format must match the sheet's own depth, not the root window's. Asking
   // for the root visual's format and then creating a 32-bit pixmap is a BadMatch, and
