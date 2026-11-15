@@ -37,6 +37,13 @@ uses
   ShellSama.Settings;
 
 type
+  TDockHideState = (
+    dhsVisible,
+    dhsHiding,
+    dhsHidden,
+    dhsShowing
+  );
+
   TDockEntry = record
     AppKey   : string;
     Title    : string;
@@ -56,6 +63,15 @@ type
   private
     FIconSize     : Integer;
     FMaxDockWidth : Integer;
+    FMaxDockHeight: Integer;
+    FLastDockPosition : string;
+    FLastDockMargin   : Integer;
+    FLastDockAutoHide : Boolean;
+    FHideState        : TDockHideState;
+    FAnimProgress     : Double;
+    FAnimTarget       : Double;
+    FAnimStart        : QWord;
+    FTriggerWin       : xcb_window_t;
     FLayoutIconSize : Integer;
     FLayoutIconX    : Integer;
     FSkipEntryRebuild: Boolean;
@@ -63,6 +79,7 @@ type
     FScrollOffset   : Integer;   // pixels the row is scrolled left
     FMaxScroll      : Integer;   // 0 when the row fits
     FContentWidth   : Integer;
+    FContentHeight  : Integer;
     FDockApps     : TShellDockApps;
     FEntries      : array of TDockEntry;
     // Replaces the old text list. See ShellSama.PreviewPopup and the design note.
@@ -76,6 +93,14 @@ type
     // preview is opened.
     FPixmaps      : TWindowPixmapStore;
     FLastDarkMode : Boolean;
+
+    function ScreenHeightHint(): Integer;
+    function DesiredHeight(): Integer;
+    function IsWindowOverlapping(): Boolean;
+    function IsPointerInsideDock(): Boolean;
+    function IsPointerAtTriggerEdge(): Boolean;
+    procedure SetupTriggerWindow();
+    procedure DestroyTriggerWindow();
 
     procedure HandleSettingsDarkModeChange(Sender: TObject);
     procedure HandleSettingsDockChange(Sender: TObject);
@@ -125,7 +150,17 @@ type
     function PanelHeight(): Integer; override;
     function PanelY(): Integer; override;
     function ComputeStrutBottom(): Integer; override;
+    function ComputeStrutLeft(): Integer; override;
+    function ComputeStrutRight(): Integer; override;
+    function IsAnimating(): Boolean; override;
+    procedure UpdateStruts(); override;
     procedure ApplyThemeStyle(); override;
+
+    function IsVertical(): Boolean;
+    procedure StartShow();
+    procedure StartHide();
+    procedure StepAnimation();
+    procedure ShowImmediate();
 
     procedure RefreshDock();
     procedure Tick(); override;
@@ -167,7 +202,11 @@ type
 
     property IconSize     : Integer        read FIconSize;
     property MaxDockWidth : Integer        read FMaxDockWidth;
+    property MaxDockHeight: Integer        read FMaxDockHeight;
     property DockApps     : TShellDockApps read FDockApps;
+    property HideState    : TDockHideState read FHideState;
+    property AnimProgress : Double         read FAnimProgress;
+    property TriggerWindow: xcb_window_t   read FTriggerWin;
   end;
 
 implementation
@@ -176,6 +215,8 @@ implementation
 // routine and reaches the live dock through this variable. Only one dock exists.
 var
   GActiveDock: TShellDock = nil;
+
+procedure c_free(p: Pointer); cdecl; external 'c' name 'free';
 
 const
   DOCK_ICON_SIZE     = 48;
@@ -235,6 +276,16 @@ begin
   else
     FIconSize := DOCK_ICON_SIZE;
   FMaxDockWidth := DOCK_MAX_WIDTH;
+  FMaxDockHeight := ScreenHeightHint() - 38 - (2 * DOCK_PADDING);
+  FLastDockPosition := ShellSettings().DockPosition;
+  FLastDockMargin := ShellSettings().DockMargin;
+  FLastDockAutoHide := ShellSettings().DockAutoHide;
+  FHideState := dhsVisible;
+  FAnimProgress := 1.0;
+  FAnimTarget := 1.0;
+  FAnimStart := 0;
+  FTriggerWin := 0;
+
   // On by default. It was opt-in while a refresh grew the shell's memory by 66MB/30s;
   // that turned out to be the toolkit choosing its EGL backend on a server with no DRI3
   // device, so every repaint ran through gallium's software path. The toolkit now asks
@@ -268,6 +319,7 @@ destructor TShellDock.Destroy();
 var
   i: Integer;
 begin
+  DestroyTriggerWindow();
   if ShellSettings().OnDarkModeChange = @HandleSettingsDarkModeChange then
     ShellSettings().OnDarkModeChange := nil;
   if ShellSettings().OnDockSettingsChange = @HandleSettingsDockChange then
@@ -338,18 +390,6 @@ begin
   ApplyThemeStyle();
 end;
 
-procedure TShellDock.HandleSettingsDockChange(Sender: TObject);
-begin
-  if (ShellSettings().DockIconSize >= 24) and (ShellSettings().DockIconSize <= 128) then
-  begin
-    if FIconSize <> ShellSettings().DockIconSize then
-    begin
-      FIconSize := ShellSettings().DockIconSize;
-      LayoutButtons();
-    end;
-  end;
-end;
-
 procedure TShellDock.SetupWindow();
 begin
   inherited SetupWindow();
@@ -360,7 +400,14 @@ begin
   if Assigned(ft_style_append_css_string) then
     ft_style_append_css_string(PChar(DOCK_ICON_CSS));
 
+  SetupTriggerWindow();
   FWindow.Invalidate();
+end;
+
+function TShellDock.IsVertical(): Boolean;
+begin
+  Result := SameText(ShellSettings().DockPosition, 'Left') or
+            SameText(ShellSettings().DockPosition, 'Right');
 end;
 
 function TShellDock.ScreenWidthHint(): Integer;
@@ -371,15 +418,43 @@ begin
     Result := 1920;
 end;
 
+function TShellDock.ScreenHeightHint(): Integer;
+begin
+  if FtIsLibLoaded() and Assigned(ft_screen_get_height) then
+    Result := FtApp().ScreenHeight
+  else
+    Result := 1080;
+end;
+
+function TShellDock.DesiredHeight(): Integer;
+var
+  n: Integer;
+begin
+  if not IsVertical() then
+    Exit(DOCK_HEIGHT);
+
+  n := EntryCount();
+  if n < 1 then
+    Exit(FIconSize + (2 * DOCK_PADDING));
+  Result := Min((2 * DOCK_PADDING) + (n * FIconSize) + ((n - 1) * DOCK_GAP),
+                FMaxDockHeight);
+end;
+
 function TShellDock.PanelHeight(): Integer;
 begin
-  Result := DOCK_HEIGHT;
+  if IsVertical() then
+    Result := FPanelHeight
+  else
+    Result := DOCK_HEIGHT;
 end;
 
 function TShellDock.DesiredWidth(): Integer;
 var
   n: Integer;
 begin
+  if IsVertical() then
+    Exit(FIconSize + (2 * DOCK_PADDING));
+
   n := EntryCount();
   if n < 1 then
     Exit(FIconSize + (2 * DOCK_PADDING));
@@ -389,25 +464,437 @@ end;
 
 function TShellDock.PanelWidth(): Integer;
 begin
-  Result := FPanelWidth;
+  if IsVertical() then
+    Result := FIconSize + (2 * DOCK_PADDING)
+  else
+    Result := FPanelWidth;
 end;
 
 function TShellDock.PanelX(): Integer;
+var
+  posStr: string;
+  m: Integer;
 begin
-  Result := (ScreenWidthHint() - PanelWidth()) div 2;
+  posStr := ShellSettings().DockPosition;
+  m := ShellSettings().DockMargin;
+  if m < 0 then m := 0;
+
+  if SameText(posStr, 'Left') then
+    Result := m
+  else if SameText(posStr, 'Right') then
+    Result := ScreenWidthHint() - PanelWidth() - m
+  else
+    Result := (ScreenWidthHint() - PanelWidth()) div 2;
 end;
 
 function TShellDock.PanelY(): Integer;
+var
+  posStr: string;
+  m, availH, topBarH: Integer;
 begin
-  if FtIsLibLoaded() and Assigned(ft_screen_get_height) then
-    Result := FtApp().ScreenHeight - DOCK_HEIGHT - DOCK_BOTTOM_MARGIN
+  posStr := ShellSettings().DockPosition;
+  m := ShellSettings().DockMargin;
+  if m < 0 then m := 0;
+
+  if SameText(posStr, 'Left') or SameText(posStr, 'Right') then
+  begin
+    topBarH := 38;
+    availH := ScreenHeightHint() - topBarH;
+    Result := topBarH + ((availH - PanelHeight()) div 2);
+    if Result < topBarH then
+      Result := topBarH;
+  end
   else
-    Result := 1080 - DOCK_HEIGHT - DOCK_BOTTOM_MARGIN;
+  begin
+    if FtIsLibLoaded() and Assigned(ft_screen_get_height) then
+      Result := FtApp().ScreenHeight - DOCK_HEIGHT - m
+    else
+      Result := 1080 - DOCK_HEIGHT - m;
+  end;
 end;
 
 function TShellDock.ComputeStrutBottom(): Integer;
+var
+  m: Integer;
 begin
-  Result := DOCK_HEIGHT + DOCK_BOTTOM_MARGIN + DOCK_TOP_MARGIN;
+  if ShellSettings().DockAutoHide or IsVertical() then
+    Exit(0);
+  m := ShellSettings().DockMargin;
+  if m < 0 then m := 0;
+  Result := DOCK_HEIGHT + m + DOCK_TOP_MARGIN;
+end;
+
+function TShellDock.ComputeStrutLeft(): Integer;
+var
+  m: Integer;
+begin
+  if ShellSettings().DockAutoHide or not SameText(ShellSettings().DockPosition, 'Left') then
+    Exit(0);
+  m := ShellSettings().DockMargin;
+  if m < 0 then m := 0;
+  Result := PanelWidth() + m + DOCK_TOP_MARGIN;
+end;
+
+function TShellDock.ComputeStrutRight(): Integer;
+var
+  m: Integer;
+begin
+  if ShellSettings().DockAutoHide or not SameText(ShellSettings().DockPosition, 'Right') then
+    Exit(0);
+  m := ShellSettings().DockMargin;
+  if m < 0 then m := 0;
+  Result := PanelWidth() + m + DOCK_TOP_MARGIN;
+end;
+
+procedure TShellDock.UpdateStruts();
+begin
+  if (FWindow = nil) or not FtIsLibLoaded() then Exit;
+  if ShellSettings().DockAutoHide then
+    FWindow.SetStrutPartial(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  else
+    inherited UpdateStruts();
+end;
+
+function TShellDock.IsAnimating(): Boolean;
+begin
+  Result := (FHideState = dhsShowing) or (FHideState = dhsHiding);
+end;
+
+function TShellDock.IsWindowOverlapping(): Boolean;
+var
+  activeWin: Cardinal;
+  geomReply: Pxcb_get_geometry_reply_t;
+  cookie: xcb_get_geometry_cookie_t;
+  transReply: Pxcb_translate_coordinates_reply_t;
+  transCookie: xcb_translate_coordinates_cookie_t;
+  propCookie: xcb_get_property_cookie_t;
+  propReply: Pxcb_get_property_reply_t;
+  wx, wy, ww, wh: Integer;
+  dx, dy, dw, dh: Integer;
+  stateLen, i: Integer;
+  pStates: PCardinal;
+begin
+  Result := False;
+  if FConn = nil then Exit;
+
+  activeWin := QueryActiveWindow();
+  if (activeWin = 0) or (activeWin = FRootWindow) or
+     ((FWindow <> nil) and (activeWin = Cardinal(PtrUInt(FWindow.NativeHandle)))) then
+    Exit(False);
+
+  // Check if active window is maximized via _NET_WM_STATE
+  if FAtomNetWmState <> 0 then
+  begin
+    propCookie := xcb_get_property(FConn, 0, activeWin, FAtomNetWmState, XCB_ATOM_ATOM, 0, 32);
+    propReply := xcb_get_property_reply(FConn, propCookie, nil);
+    if propReply <> nil then
+    begin
+      try
+        stateLen := xcb_get_property_value_length(propReply) div SizeOf(Cardinal);
+        pStates := PCardinal(xcb_get_property_value(propReply));
+        for i := 0 to stateLen - 1 do
+        begin
+          if (pStates^ = FAtomNetWmStateMaxVert) or (pStates^ = FAtomNetWmStateMaxHorz) then
+          begin
+            Exit(True);
+          end;
+          Inc(pStates);
+        end;
+      finally
+        c_free(propReply);
+      end;
+    end;
+  end;
+
+  // Query window geometry
+  cookie := xcb_get_geometry(FConn, activeWin);
+  geomReply := xcb_get_geometry_reply(FConn, cookie, nil);
+  if geomReply = nil then Exit(False);
+
+  try
+    ww := geomReply^.width;
+    wh := geomReply^.height;
+  finally
+    c_free(geomReply);
+  end;
+
+  transCookie := xcb_translate_coordinates(FConn, activeWin, FRootWindow, 0, 0);
+  transReply := xcb_translate_coordinates_reply(FConn, transCookie, nil);
+  if transReply = nil then Exit(False);
+
+  try
+    wx := transReply^.dst_x;
+    wy := transReply^.dst_y;
+  finally
+    c_free(transReply);
+  end;
+
+  dx := PanelX();
+  dy := PanelY();
+  dw := PanelWidth();
+  dh := PanelHeight();
+
+  // Rectangle intersection
+  Result := not ((wx + ww <= dx) or (dx + dw <= wx) or (wy + wh <= dy) or (dy + dh <= wy));
+end;
+
+function TShellDock.IsPointerInsideDock(): Boolean;
+var
+  cookie: xcb_query_pointer_cookie_t;
+  reply: Pxcb_query_pointer_reply_t;
+  px, py: Integer;
+  dx, dy, dw, dh: Integer;
+begin
+  Result := False;
+  if (FConn = nil) or (FRootWindow = 0) or (FWindow = nil) then Exit;
+
+  cookie := xcb_query_pointer(FConn, FRootWindow);
+  reply := xcb_query_pointer_reply(FConn, cookie, nil);
+  if reply = nil then Exit;
+
+  try
+    px := reply^.root_x;
+    py := reply^.root_y;
+  finally
+    c_free(reply);
+  end;
+
+  dx := FWindow.X;
+  dy := FWindow.Y;
+  dw := PanelWidth();
+  dh := PanelHeight();
+
+  Result := (px >= dx) and (px < dx + dw) and (py >= dy) and (py < dy + dh);
+end;
+
+function TShellDock.IsPointerAtTriggerEdge(): Boolean;
+var
+  cookie: xcb_query_pointer_cookie_t;
+  reply: Pxcb_query_pointer_reply_t;
+  px, py: Integer;
+  scrW, scrH: Integer;
+  posStr: string;
+begin
+  Result := False;
+  if (FConn = nil) or (FRootWindow = 0) then Exit;
+
+  cookie := xcb_query_pointer(FConn, FRootWindow);
+  reply := xcb_query_pointer_reply(FConn, cookie, nil);
+  if reply = nil then Exit;
+
+  try
+    px := reply^.root_x;
+    py := reply^.root_y;
+  finally
+    c_free(reply);
+  end;
+
+  scrW := ScreenWidthHint();
+  scrH := ScreenHeightHint();
+  posStr := ShellSettings().DockPosition;
+
+  if SameText(posStr, 'Left') then
+    Result := (px <= 4) and (py >= PanelY()) and (py <= PanelY() + PanelHeight())
+  else if SameText(posStr, 'Right') then
+    Result := (px >= scrW - 4) and (py >= PanelY()) and (py <= PanelY() + PanelHeight())
+  else
+    Result := (py >= scrH - 4) and (px >= PanelX()) and (px <= PanelX() + PanelWidth());
+end;
+
+procedure TShellDock.StartShow();
+begin
+  if FHideState = dhsVisible then Exit;
+  FHideState := dhsShowing;
+  FAnimTarget := 1.0;
+  FAnimStart := GetTickCount64() - Round(FAnimProgress * 150.0);
+end;
+
+procedure TShellDock.StartHide();
+begin
+  if FHideState = dhsHidden then Exit;
+  FHideState := dhsHiding;
+  FAnimTarget := 0.0;
+  FAnimStart := GetTickCount64() - Round((1.0 - FAnimProgress) * 150.0);
+end;
+
+procedure TShellDock.ShowImmediate();
+begin
+  FHideState := dhsVisible;
+  FAnimProgress := 1.0;
+  FAnimTarget := 1.0;
+  if FWindow <> nil then
+    FWindow.SetPosition(PanelX(), PanelY());
+end;
+
+procedure TShellDock.StepAnimation();
+var
+  nowMs: QWord;
+  elapsed: Double;
+  normX, normY, hidX, hidY, curX, curY: Integer;
+begin
+  if FWindow = nil then Exit;
+
+  nowMs := GetTickCount64();
+  elapsed := (nowMs - FAnimStart) / 150.0;
+  if elapsed >= 1.0 then
+  begin
+    FAnimProgress := FAnimTarget;
+    if FAnimTarget = 1.0 then
+      FHideState := dhsVisible
+    else
+      FHideState := dhsHidden;
+  end
+  else
+  begin
+    if FAnimTarget = 1.0 then
+      FAnimProgress := elapsed
+    else
+      FAnimProgress := 1.0 - elapsed;
+  end;
+
+  normX := PanelX();
+  normY := PanelY();
+
+  if SameText(ShellSettings().DockPosition, 'Left') then
+  begin
+    hidX := -PanelWidth();
+    curX := Round(hidX + (normX - hidX) * FAnimProgress);
+    FWindow.SetPosition(curX, normY);
+  end
+  else if SameText(ShellSettings().DockPosition, 'Right') then
+  begin
+    hidX := ScreenWidthHint();
+    curX := Round(hidX + (normX - hidX) * FAnimProgress);
+    FWindow.SetPosition(curX, normY);
+  end
+  else
+  begin
+    hidY := ScreenHeightHint();
+    curY := Round(hidY + (normY - hidY) * FAnimProgress);
+    FWindow.SetPosition(normX, curY);
+  end;
+end;
+
+procedure TShellDock.DestroyTriggerWindow();
+begin
+  if (FConn <> nil) and (FTriggerWin <> 0) then
+  begin
+    xcb_destroy_window(FConn, FTriggerWin);
+    xcb_flush(FConn);
+    FTriggerWin := 0;
+  end;
+end;
+
+procedure TShellDock.SetupTriggerWindow();
+var
+  wid: xcb_window_t;
+  tx, ty, tw, th: Integer;
+  valMask: Cardinal;
+  valList: array[0..3] of Cardinal;
+  scrW, scrH: Integer;
+  posStr: string;
+begin
+  if (FConn = nil) or (FRootWindow = 0) then Exit;
+  if not ShellSettings().DockAutoHide then
+  begin
+    DestroyTriggerWindow();
+    Exit;
+  end;
+
+  scrW := ScreenWidthHint();
+  scrH := ScreenHeightHint();
+  posStr := ShellSettings().DockPosition;
+
+  if SameText(posStr, 'Left') then
+  begin
+    tx := 0;
+    ty := PanelY();
+    tw := 2;
+    th := PanelHeight();
+  end
+  else if SameText(posStr, 'Right') then
+  begin
+    tx := scrW - 2;
+    ty := PanelY();
+    tw := 2;
+    th := PanelHeight();
+  end
+  else
+  begin
+    tx := PanelX();
+    ty := scrH - 2;
+    tw := PanelWidth();
+    th := 2;
+  end;
+
+  if FTriggerWin = 0 then
+  begin
+    wid := xcb_generate_id(FConn);
+    valMask := XCB_CW_OVERRIDE_REDIRECT or XCB_CW_EVENT_MASK;
+    valList[0] := 1;
+    valList[1] := XCB_EVENT_MASK_ENTER_WINDOW;
+
+    xcb_create_window(FConn, 0, wid, FRootWindow,
+                      tx, ty, tw, th, 0,
+                      XCB_WINDOW_CLASS_INPUT_ONLY,
+                      0, valMask, @valList[0]);
+    xcb_map_window(FConn, wid);
+    xcb_flush(FConn);
+    FTriggerWin := wid;
+  end
+  else
+  begin
+    valMask := XCB_CONFIG_WINDOW_X or XCB_CONFIG_WINDOW_Y or
+               XCB_CONFIG_WINDOW_WIDTH or XCB_CONFIG_WINDOW_HEIGHT;
+    valList[0] := tx;
+    valList[1] := ty;
+    valList[2] := tw;
+    valList[3] := th;
+    xcb_configure_window(FConn, FTriggerWin, valMask, @valList[0]);
+    xcb_flush(FConn);
+  end;
+end;
+
+procedure TShellDock.HandleSettingsDockChange(Sender: TObject);
+var
+  needRelayout: Boolean;
+begin
+  needRelayout := False;
+
+  if (ShellSettings().DockIconSize >= 24) and (ShellSettings().DockIconSize <= 128) then
+  begin
+    if FIconSize <> ShellSettings().DockIconSize then
+    begin
+      FIconSize := ShellSettings().DockIconSize;
+      needRelayout := True;
+    end;
+  end;
+
+  if FLastDockPosition <> ShellSettings().DockPosition then
+  begin
+    FLastDockPosition := ShellSettings().DockPosition;
+    needRelayout := True;
+  end;
+
+  if FLastDockMargin <> ShellSettings().DockMargin then
+  begin
+    FLastDockMargin := ShellSettings().DockMargin;
+    needRelayout := True;
+  end;
+
+  if FLastDockAutoHide <> ShellSettings().DockAutoHide then
+  begin
+    FLastDockAutoHide := ShellSettings().DockAutoHide;
+    UpdateStruts();
+    SetupTriggerWindow();
+    if not FLastDockAutoHide then
+      ShowImmediate();
+  end;
+
+  if needRelayout then
+    LayoutButtons()
+  else
+    UpdateStruts();
 end;
 
 // ---------------------------------------------------------------- model
@@ -716,11 +1203,22 @@ begin
 
   focused := GActiveDock.EntryFocused(idx);
   // AX/AY are the button's position in WINDOW coordinates, not offsets inside it.
-  // The dot is placed relative to the button's own rectangle, positioned close to
-  // the icon bottom edge (bleeding slightly into the icon boundary) to preserve
-  // balanced clearance from the dock plate bottom.
-  cxp := AX + (AW / 2);
-  cyp := (AY + AH) + 1.0;
+  // The dot is placed relative to the button's own rectangle.
+  if SameText(ShellSettings().DockPosition, 'Left') then
+  begin
+    cxp := AX - 1.0;
+    cyp := AY + (AH / 2);
+  end
+  else if SameText(ShellSettings().DockPosition, 'Right') then
+  begin
+    cxp := (AX + AW) + 1.0;
+    cyp := AY + (AH / 2);
+  end
+  else
+  begin
+    cxp := AX + (AW / 2);
+    cyp := (AY + AH) + 1.0;
+  end;
   radius := DOT_SIZE / 2;
 
   isDark := True;
@@ -754,7 +1252,7 @@ end;
 
 procedure TShellDock.LayoutButtons();
 var
-  i, k, iconX, iconY, x, wantW, btnSize, gap, total: Integer;
+  i, k, iconX, iconY, x, y, wantW, wantH, btnSize, gap, total: Integer;
   opacity: Double;
   iconBmp: TFtBitmap;
 begin
@@ -767,10 +1265,9 @@ begin
   // Resize in place, in the same pass. Recreating the window would drop its strut and
   // make every maximized client flash.
   wantW := DesiredWidth();
-  if wantW <> FPanelWidth then
-    ResizeWindow(wantW, DOCK_HEIGHT, (ScreenWidthHint() - wantW) div 2);
-
-  iconY := (DOCK_HEIGHT - FIconSize) div 2;
+  wantH := DesiredHeight();
+  if (wantW <> FPanelWidth) or (wantH <> FPanelHeight) then
+    ResizeWindow(wantW, wantH, PanelX());
 
   if Length(FEntries) = 0 then
   begin
@@ -785,37 +1282,71 @@ begin
   gap := DOCK_GAP;
   total := (Length(FEntries) * btnSize) + ((Length(FEntries) - 1) * gap);
 
-  FContentWidth := total;
-  FMaxScroll := total + (2 * DOCK_PADDING) - PanelWidth();
-  if FMaxScroll < 0 then
-    FMaxScroll := 0;
-  // Clamp AFTER the new maximum is known. Clamping first truncates the offset using
-  // the previous layout's maximum, which silently undoes a scroll on the pass that
-  // changes the entry count.
-  if FScrollOffset > FMaxScroll then
-    FScrollOffset := FMaxScroll;
-  if FScrollOffset < 0 then
-    FScrollOffset := 0;
+  if IsVertical() then
+  begin
+    FContentHeight := total;
+    FMaxScroll := total + (2 * DOCK_PADDING) - PanelHeight();
+    if FMaxScroll < 0 then
+      FMaxScroll := 0;
+    if FScrollOffset > FMaxScroll then
+      FScrollOffset := FMaxScroll;
+    if FScrollOffset < 0 then
+      FScrollOffset := 0;
 
-  // Centred when the row fits, scrolled from the left padding when it does not.
-  if FMaxScroll = 0 then
-    iconX := (PanelWidth() - total) div 2
+    iconX := (PanelWidth() - btnSize) div 2;
+    if FMaxScroll = 0 then
+      iconY := (PanelHeight() - total) div 2
+    else
+      iconY := DOCK_PADDING - FScrollOffset;
+    if (FMaxScroll = 0) and (iconY < DOCK_PADDING) then
+      iconY := DOCK_PADDING;
+
+    FLayoutIconSize := btnSize;
+    FLayoutIconX := iconX;
+  end
   else
-    iconX := DOCK_PADDING - FScrollOffset;
-  if (FMaxScroll = 0) and (iconX < DOCK_PADDING) then
-    iconX := DOCK_PADDING;
+  begin
+    FContentWidth := total;
+    FMaxScroll := total + (2 * DOCK_PADDING) - PanelWidth();
+    if FMaxScroll < 0 then
+      FMaxScroll := 0;
+    // Clamp AFTER the new maximum is known. Clamping first truncates the offset using
+    // the previous layout's maximum, which silently undoes a scroll on the pass that
+    // changes the entry count.
+    if FScrollOffset > FMaxScroll then
+      FScrollOffset := FMaxScroll;
+    if FScrollOffset < 0 then
+      FScrollOffset := 0;
 
-  iconY := (DOCK_HEIGHT - btnSize) div 2;
-  FLayoutIconSize := btnSize;
-  FLayoutIconX := iconX;
+    // Centred when the row fits, scrolled from the left padding when it does not.
+    if FMaxScroll = 0 then
+      iconX := (PanelWidth() - total) div 2
+    else
+      iconX := DOCK_PADDING - FScrollOffset;
+    if (FMaxScroll = 0) and (iconX < DOCK_PADDING) then
+      iconX := DOCK_PADDING;
+
+    iconY := (DOCK_HEIGHT - btnSize) div 2;
+    FLayoutIconSize := btnSize;
+    FLayoutIconX := iconX;
+  end;
 
   for i := 0 to High(FEntries) do
   begin
-    x := iconX + (i * (btnSize + gap));
+    if IsVertical() then
+    begin
+      x := iconX;
+      y := iconY + (i * (btnSize + gap));
+    end
+    else
+    begin
+      x := iconX + (i * (btnSize + gap));
+      y := iconY;
+    end;
 
     if FEntries[i].Button = nil then
     begin
-      FEntries[i].Button := TFtButton.Create(FWindow, x, iconY, btnSize, btnSize,
+      FEntries[i].Button := TFtButton.Create(FWindow, x, y, btnSize, btnSize,
                                              FEntries[i].Title);
       FEntries[i].Button.IsToggle := False;
       FEntries[i].Button.Flat := True;
@@ -826,7 +1357,7 @@ begin
       FEntries[i].Button.OnClick := @HandleEntryClick;
     end
     else
-      FEntries[i].Button.SetBounds(x, iconY, btnSize, btnSize);
+      FEntries[i].Button.SetBounds(x, y, btnSize, btnSize);
 
     FEntries[i].Button.Tag := i;
     FEntries[i].Button.Caption := FEntries[i].Title;
@@ -848,7 +1379,7 @@ begin
     FEntries[i].Button.Toggled := False;
 
     for k := 0 to High(FEntries[i].Windows) do
-      SetWindowIconGeometry(FEntries[i].Windows[k], PanelX() + x, PanelY() + iconY, btnSize, btnSize);
+      SetWindowIconGeometry(FEntries[i].Windows[k], PanelX() + x, PanelY() + y, btnSize, btnSize);
 
     // The running indicator is drawn by the button's own paint overlay, not by a
     // child widget: a child at the bottom of the stack is covered by its siblings, and
@@ -861,16 +1392,27 @@ begin
     opacity := 1.0;
     if FMaxScroll > 0 then
     begin
-      if x < DOCK_PADDING then
-        opacity := 0.15 + (0.85 * ((x + btnSize - DOCK_PADDING) / btnSize))
-      else if x + btnSize > PanelWidth() - DOCK_PADDING then
-        opacity := 0.15 + (0.85 * (((PanelWidth() - DOCK_PADDING) - x) / btnSize));
+      if IsVertical() then
+      begin
+        if y < DOCK_PADDING then
+          opacity := 0.15 + (0.85 * ((y + btnSize - DOCK_PADDING) / btnSize))
+        else if y + btnSize > PanelHeight() - DOCK_PADDING then
+          opacity := 0.15 + (0.85 * (((PanelHeight() - DOCK_PADDING) - y) / btnSize));
+      end
+      else
+      begin
+        if x < DOCK_PADDING then
+          opacity := 0.15 + (0.85 * ((x + btnSize - DOCK_PADDING) / btnSize))
+        else if x + btnSize > PanelWidth() - DOCK_PADDING then
+          opacity := 0.15 + (0.85 * (((PanelWidth() - DOCK_PADDING) - x) / btnSize));
+      end;
       if opacity < 0.15 then opacity := 0.15;
       if opacity > 1.0 then opacity := 1.0;
     end;
     FEntries[i].Button.Opacity := opacity;
   end;
 
+  SetupTriggerWindow();
   FWindow.Invalidate();
 end;
 
@@ -1292,6 +1834,33 @@ begin
 
   // Ensure settings updates are detected if dock is running standalone
   ShellSettings().CheckReload();
+
+  if ShellSettings().DockAutoHide then
+  begin
+    if IsPointerInsideDock() or IsPointerAtTriggerEdge() then
+    begin
+      if FHideState in [dhsHidden, dhsHiding] then
+        StartShow();
+    end
+    else
+    begin
+      if IsWindowOverlapping() then
+      begin
+        if FHideState in [dhsVisible, dhsShowing] then
+          StartHide();
+      end
+      else
+      begin
+        if FHideState in [dhsHidden, dhsHiding] then
+          StartShow();
+      end;
+    end;
+
+    if IsAnimating() then
+      StepAnimation();
+  end
+  else if FHideState <> dhsVisible then
+    ShowImmediate();
 
   RefreshPixmaps();
   SyncPreview();

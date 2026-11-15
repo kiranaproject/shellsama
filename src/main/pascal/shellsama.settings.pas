@@ -413,7 +413,7 @@ var
   oldWall, oldModeStr, oldClock, oldDockPos: string;
   oldMode: TWallpaperMode;
   oldDark, oldShowDesk, oldDockHide: Boolean;
-  oldDockSize: Integer;
+  oldDockSize, oldDockMargin: Integer;
 begin
   Result := False;
 
@@ -439,6 +439,7 @@ begin
   oldDockSize := FDockIconSize;
   oldDockHide := FDockAutoHide;
   oldDockPos := FDockPosition;
+  oldDockMargin := FDockMargin;
 
   try
     Load();
@@ -474,7 +475,7 @@ begin
   end;
 
   if (oldDockSize <> FDockIconSize) or (oldDockHide <> FDockAutoHide) or
-     (oldDockPos <> FDockPosition) then
+     (oldDockPos <> FDockPosition) or (oldDockMargin <> FDockMargin) then
   begin
     if Assigned(FOnDockSettingsChange) then
       FOnDockSettingsChange(Self);

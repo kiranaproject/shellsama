@@ -39,6 +39,11 @@ type
     procedure TestDockFollowsDarkAndLightTheme();
     procedure TestSingleWindowClickMinimizesWhenActive();
     procedure TestDockEntryMenuForSingleWindowOffersWindowActions();
+    procedure TestDockLeftPositionGeometry();
+    procedure TestDockRightPositionGeometry();
+    procedure TestDockDynamicMargin();
+    procedure TestDockAutoHideStruts();
+    procedure TestDockIntellihideAnimation();
   end;
 
 type
@@ -603,6 +608,106 @@ begin
   finally
     captions.Free();
   end;
+end;
+
+procedure TDockTest.TestDockLeftPositionGeometry();
+var
+  sw, sh: Integer;
+begin
+  ShellSettings().DockPosition := 'Left';
+  ShellSettings().DockMargin := 5;
+  FDock.RefreshDock();
+
+  sw := FtApp().ScreenWidth;
+  sh := FtApp().ScreenHeight;
+
+  AssertTrue('Left dock is vertical', FDock.IsVertical());
+  AssertEquals('Left dock width', FDock.IconSize + 20, FDock.PanelWidth());
+  AssertEquals('Left dock margin X', 5, FDock.PanelX());
+  AssertTrue('Left dock Y is below top panel', FDock.PanelY() >= 38);
+  AssertEquals('Left dock strut', FDock.PanelWidth() + 5 + 3, FDock.ComputeStrutLeft());
+  AssertEquals('Left dock has no right strut', 0, FDock.ComputeStrutRight());
+  AssertEquals('Left dock has no bottom strut', 0, FDock.ComputeStrutBottom());
+end;
+
+procedure TDockTest.TestDockRightPositionGeometry();
+var
+  sw: Integer;
+begin
+  ShellSettings().DockPosition := 'Right';
+  ShellSettings().DockMargin := 8;
+  FDock.RefreshDock();
+
+  sw := FtApp().ScreenWidth;
+
+  AssertTrue('Right dock is vertical', FDock.IsVertical());
+  AssertEquals('Right dock width', FDock.IconSize + 20, FDock.PanelWidth());
+  AssertEquals('Right dock margin X', sw - FDock.PanelWidth() - 8, FDock.PanelX());
+  AssertTrue('Right dock Y is below top panel', FDock.PanelY() >= 38);
+  AssertEquals('Right dock strut', FDock.PanelWidth() + 8 + 3, FDock.ComputeStrutRight());
+  AssertEquals('Right dock has no left strut', 0, FDock.ComputeStrutLeft());
+  AssertEquals('Right dock has no bottom strut', 0, FDock.ComputeStrutBottom());
+end;
+
+procedure TDockTest.TestDockDynamicMargin();
+var
+  sh: Integer;
+begin
+  sh := FtApp().ScreenHeight;
+
+  // Margin 0
+  ShellSettings().DockPosition := 'Bottom';
+  ShellSettings().DockMargin := 0;
+  FDock.RefreshDock();
+  AssertEquals('Bottom margin 0 Y', sh - 60 - 0, FDock.PanelY());
+  AssertEquals('Bottom margin 0 strut', 60 + 0 + 3, FDock.ComputeStrutBottom());
+
+  // Margin 5
+  ShellSettings().DockMargin := 5;
+  FDock.RefreshDock();
+  AssertEquals('Bottom margin 5 Y', sh - 60 - 5, FDock.PanelY());
+  AssertEquals('Bottom margin 5 strut', 60 + 5 + 3, FDock.ComputeStrutBottom());
+end;
+
+procedure TDockTest.TestDockAutoHideStruts();
+begin
+  ShellSettings().DockAutoHide := True;
+  ShellSettings().DockPosition := 'Bottom';
+  FDock.RefreshDock();
+
+  AssertEquals('Auto-hide bottom strut is 0', 0, FDock.ComputeStrutBottom());
+  AssertEquals('Auto-hide left strut is 0', 0, FDock.ComputeStrutLeft());
+  AssertEquals('Auto-hide right strut is 0', 0, FDock.ComputeStrutRight());
+
+  ShellSettings().DockPosition := 'Left';
+  FDock.RefreshDock();
+  AssertEquals('Auto-hide left dock has 0 left strut', 0, FDock.ComputeStrutLeft());
+end;
+
+procedure TDockTest.TestDockIntellihideAnimation();
+begin
+  ShellSettings().DockAutoHide := True;
+  FDock.RefreshDock();
+
+  // Initial state should be visible or hidden
+  FDock.ShowImmediate();
+  AssertEquals('Immediate show makes dock visible', Ord(dhsVisible), Ord(FDock.HideState));
+  AssertFalse('Immediate show is not animating', FDock.IsAnimating());
+  AssertEquals('Anim progress is 1.0', 1.0, FDock.AnimProgress, 0.001);
+
+  // Trigger hide
+  FDock.StartHide();
+  AssertEquals('StartHide sets state to dhsHiding', Ord(dhsHiding), Ord(FDock.HideState));
+  AssertTrue('Dock is animating during hide', FDock.IsAnimating());
+
+  // Trigger show
+  FDock.StartShow();
+  AssertEquals('StartShow sets state to dhsShowing', Ord(dhsShowing), Ord(FDock.HideState));
+  AssertTrue('Dock is animating during show', FDock.IsAnimating());
+
+  // Settle back to visible
+  FDock.ShowImmediate();
+  AssertEquals('Dock settled back to visible', Ord(dhsVisible), Ord(FDock.HideState));
 end;
 
 initialization

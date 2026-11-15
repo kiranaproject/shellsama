@@ -669,20 +669,16 @@ begin
   // Drive the launcher's scroll animation, and switch the panel's own timer to frame rate
   // while that animation is in flight. Reverts to the idle interval as soon as it settles.
   if Assigned(FLauncher) and FLauncher.IsVisible then
-  begin
     FLauncher.Tick();
-    if Assigned(ft_set_timer) then
+
+  if (Assigned(GBottomPanelInstance) and GBottomPanelInstance.IsAnimating()) or
+     (Assigned(FLauncher) and FLauncher.IsVisible and FLauncher.IsAnimating) then
+  begin
+    if not FAnimTimerActive then
     begin
-      if FLauncher.IsAnimating and not FAnimTimerActive then
-      begin
-        FAnimTimerActive := True;
+      FAnimTimerActive := True;
+      if Assigned(ft_set_timer) then
         ft_set_timer(PANEL_ANIM_TIMER_MS, @TopPanelTickCallback, Self);
-      end
-      else if (not FLauncher.IsAnimating) and FAnimTimerActive then
-      begin
-        FAnimTimerActive := False;
-        ft_set_timer(PANEL_TIMER_MS, @TopPanelTickCallback, Self);
-      end;
     end;
   end
   else if FAnimTimerActive then
