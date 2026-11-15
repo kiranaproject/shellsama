@@ -105,7 +105,8 @@ begin
 
   // 3. Clock text label
   AssertNotNull('Clock text widget must be created', FPanel.ClockWidget);
-  AssertTrue('Clock button must be wide enough to show date and time without truncation', FPanel.ClockWidget.Width >= 200);
+  AssertTrue('Clock button must be wide enough to show date and time without truncation', FPanel.ClockWidget.Width >= 140);
+  AssertTrue('Clock button width is compact with uniform margins', FPanel.ClockWidget.Width <= 190);
 
   // 4. Tray widget
   AssertNotNull('Tray widget must be created', FPanel.TrayWidget);
@@ -179,6 +180,10 @@ begin
   FPanel.UpdateClock();
   AssertNotNull('Clock widget still valid', FPanel.ClockWidget);
   AssertTrue('Clock button caption must not end with ellipsis', Pos('...', FPanel.ClockApplet.Button.Caption) = 0);
+  AssertEquals('Clock button gap to Session must be TOPPANEL_GAP (4px)',
+    4, FPanel.SessionApplet.Button.X - (FPanel.ClockApplet.Button.X + FPanel.ClockApplet.Button.Width));
+  AssertEquals('Clock button gap to Volume must be TOPPANEL_GAP (4px)',
+    4, FPanel.ClockApplet.Button.X - (FPanel.VolumeApplet.Button.X + FPanel.VolumeApplet.Button.Width));
 end;
 
 procedure TTopPanelTest.TestLauncherSync();

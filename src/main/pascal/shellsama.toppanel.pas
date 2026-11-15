@@ -156,7 +156,7 @@ const
 
   TOPPANEL_SHOW_DESKTOP_W = 32;
   TOPPANEL_SESSION_W      = 32;
-  TOPPANEL_CLOCK_W        = 216;
+  TOPPANEL_CLOCK_W        = 146;
   TOPPANEL_VOLUME_W       = 36;
   TOPPANEL_KEYBOARD_W     = 36;
   TOPPANEL_DISPLAY_W      = 36;
@@ -419,10 +419,47 @@ end;
 
 procedure TShellTopPanel.UpdateAppletPositions();
 var
-  curX, trayW, trayX: Integer;
+  curX, trayW, trayX, clockW: Integer;
   showKeyboard: Boolean;
 begin
   if not Assigned(FVolumeApplet) or not Assigned(FVolumeApplet.Button) then Exit;
+
+  // 1. Rightmost anchor: Show Desktop button
+  curX := FPanelWidth - TOPPANEL_RIGHT_INSET;
+  if Assigned(FShowDesktopBtn) and FShowDesktopBtn.Visible then
+  begin
+    curX := curX - TOPPANEL_SHOW_DESKTOP_W;
+    if (FShowDesktopBtn.X <> curX) or (FShowDesktopBtn.Width <> TOPPANEL_SHOW_DESKTOP_W) then
+      FShowDesktopBtn.SetBounds(curX, 3, TOPPANEL_SHOW_DESKTOP_W, 32);
+    curX := curX - TOPPANEL_GAP;
+  end;
+
+  // 2. Power / Session Applet
+  if Assigned(FSessionApplet) and Assigned(FSessionApplet.Button) then
+  begin
+    curX := curX - TOPPANEL_SESSION_W;
+    if (FSessionApplet.Button.X <> curX) or (FSessionApplet.Button.Width <> TOPPANEL_SESSION_W) then
+      FSessionApplet.SetBounds(curX, 3, TOPPANEL_SESSION_W, 32);
+    curX := curX - TOPPANEL_GAP;
+  end;
+
+  // 3. Clock Applet (Date & Time with uniform padding)
+  if Assigned(FClockApplet) and Assigned(FClockApplet.Button) then
+  begin
+    clockW := FClockApplet.GetPreferredWidth();
+    curX := curX - clockW;
+    if (FClockApplet.Button.X <> curX) or (FClockApplet.Button.Width <> clockW) then
+      FClockApplet.SetBounds(curX, 3, clockW, 32);
+    curX := curX - TOPPANEL_GAP;
+  end;
+
+  // 4. Volume Applet
+  if Assigned(FVolumeApplet) and Assigned(FVolumeApplet.Button) then
+  begin
+    curX := curX - TOPPANEL_VOLUME_W;
+    if (FVolumeApplet.Button.X <> curX) or (FVolumeApplet.Button.Width <> TOPPANEL_VOLUME_W) then
+      FVolumeApplet.SetBounds(curX, 3, TOPPANEL_VOLUME_W, 32);
+  end;
 
   // Auto-hide keyboard applet if system tray hosts an input method client (IBus, Mozc, Fcitx, etc.)
   showKeyboard := True;
@@ -444,37 +481,43 @@ begin
   if showKeyboard and Assigned(FKeyboardApplet) and Assigned(FKeyboardApplet.Button) then
   begin
     curX := curX - TOPPANEL_GAP - TOPPANEL_KEYBOARD_W;
-    FKeyboardApplet.SetBounds(curX, 3, TOPPANEL_KEYBOARD_W, 32);
+    if (FKeyboardApplet.Button.X <> curX) or (FKeyboardApplet.Button.Width <> TOPPANEL_KEYBOARD_W) then
+      FKeyboardApplet.SetBounds(curX, 3, TOPPANEL_KEYBOARD_W, 32);
   end;
 
   if Assigned(FDisplayApplet) and Assigned(FDisplayApplet.Button) then
   begin
     curX := curX - TOPPANEL_GAP - TOPPANEL_DISPLAY_W;
-    FDisplayApplet.SetBounds(curX, 3, TOPPANEL_DISPLAY_W, 32);
+    if (FDisplayApplet.Button.X <> curX) or (FDisplayApplet.Button.Width <> TOPPANEL_DISPLAY_W) then
+      FDisplayApplet.SetBounds(curX, 3, TOPPANEL_DISPLAY_W, 32);
   end;
 
   if Assigned(FBatteryApplet) and Assigned(FBatteryApplet.Button) then
   begin
     curX := curX - TOPPANEL_GAP - TOPPANEL_BATTERY_W;
-    FBatteryApplet.SetBounds(curX, 3, TOPPANEL_BATTERY_W, 32);
+    if (FBatteryApplet.Button.X <> curX) or (FBatteryApplet.Button.Width <> TOPPANEL_BATTERY_W) then
+      FBatteryApplet.SetBounds(curX, 3, TOPPANEL_BATTERY_W, 32);
   end;
 
   if Assigned(FBluetoothApplet) and Assigned(FBluetoothApplet.Button) then
   begin
     curX := curX - TOPPANEL_GAP - TOPPANEL_BLUETOOTH_W;
-    FBluetoothApplet.SetBounds(curX, 3, TOPPANEL_BLUETOOTH_W, 32);
+    if (FBluetoothApplet.Button.X <> curX) or (FBluetoothApplet.Button.Width <> TOPPANEL_BLUETOOTH_W) then
+      FBluetoothApplet.SetBounds(curX, 3, TOPPANEL_BLUETOOTH_W, 32);
   end;
 
   if Assigned(FWiredApplet) and Assigned(FWiredApplet.Button) then
   begin
     curX := curX - TOPPANEL_GAP - TOPPANEL_WIRED_W;
-    FWiredApplet.SetBounds(curX, 3, TOPPANEL_WIRED_W, 32);
+    if (FWiredApplet.Button.X <> curX) or (FWiredApplet.Button.Width <> TOPPANEL_WIRED_W) then
+      FWiredApplet.SetBounds(curX, 3, TOPPANEL_WIRED_W, 32);
   end;
 
   if Assigned(FLanApplet) and Assigned(FLanApplet.Button) then
   begin
     curX := curX - TOPPANEL_GAP - TOPPANEL_LAN_W;
-    FLanApplet.SetBounds(curX, 3, TOPPANEL_LAN_W, 32);
+    if (FLanApplet.Button.X <> curX) or (FLanApplet.Button.Width <> TOPPANEL_LAN_W) then
+      FLanApplet.SetBounds(curX, 3, TOPPANEL_LAN_W, 32);
   end;
 
   if Assigned(FTray) then
@@ -1079,7 +1122,10 @@ end;
 procedure TShellTopPanel.HandleSettingsClockFormatChange(Sender: TObject);
 begin
   if Assigned(FClockApplet) then
+  begin
     FClockApplet.UpdateClock();
+    UpdateAppletPositions();
+  end;
 end;
 
 procedure TShellTopPanel.HandleSettingsShowDesktopChange(Sender: TObject);
@@ -1087,6 +1133,7 @@ begin
   if Assigned(FShowDesktopBtn) then
   begin
     FShowDesktopBtn.Visible := ShellSettings().ShowDesktopButton;
+    UpdateAppletPositions();
     if Assigned(FWindow) then
       FWindow.Invalidate();
   end;

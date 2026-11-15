@@ -102,6 +102,7 @@ type
     constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
     destructor Destroy(); override;
 
+    function GetPreferredWidth(): Integer;
     procedure UpdateClock();
     procedure ApplyThemeStyle();
     procedure ShowPopup();
@@ -1286,6 +1287,7 @@ begin
   FButton.Flat := True;
   FButton.IsToggle := True;
   FButton.CornerRadius := 6.0;
+  FButton.PaddingX := 9.0;
   FButton.OnClick := @HandleButtonClick;
 
   UpdateClock();
@@ -1305,6 +1307,19 @@ begin
     FButton := nil;
   end;
   inherited Destroy();
+end;
+
+function TShellClockApplet.GetPreferredWidth(): Integer;
+var
+  tw: Double;
+begin
+  Result := 146;
+  if Assigned(FButton) and (FButton.Caption <> '') and Assigned(ft_font_text_width) then
+  begin
+    tw := ft_font_text_width(nil, PChar(FButton.Caption));
+    if tw > 0.0 then
+      Result := Round(tw) + 18; // 9px margin on left and right, matching other applets
+  end;
 end;
 
 procedure TShellClockApplet.SetBounds(AX, AY, AW, AH: Integer);
@@ -1655,13 +1670,26 @@ end;
 procedure TShellClockApplet.ShowPopup();
 var
   curY, curM, curD: Word;
+  popX, popY, popW, popH: Integer;
 begin
   DecodeDate(Now(), curY, curM, curD);
   FViewYear := curY;
   FViewMonth := curM;
 
   if not Assigned(FPopupWindow) then
-    CreatePopupWindow();
+    CreatePopupWindow()
+  else if Assigned(FButton) and Assigned(FPanelWindow) then
+  begin
+    popW := FPopupWindow.Width;
+    popH := FPopupWindow.Height;
+    popX := FButton.X + (FButton.Width - popW) div 2;
+    popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
+    FPopupWindow.SetPosition(popX, popY);
+  end;
 
   ApplyThemeStyle();
 
