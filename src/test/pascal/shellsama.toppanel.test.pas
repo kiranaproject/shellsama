@@ -29,6 +29,7 @@ type
     procedure TestToggleShowDesktop();
     procedure TestAppletHoverSwitching();
     procedure TestTopPanelIconsFollowDarkMode();
+    procedure TestKeyboardAppletAutoHideOnInputMethodTrayClient();
   end;
 
 implementation
@@ -396,6 +397,52 @@ begin
   AssertNotNull('Wired button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.WiredApplet.Button.Handle));
   AssertNotNull('LAN button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.LanApplet.Button.Handle));
   AssertNotNull('Session button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.SessionApplet.Button.Handle));
+end;
+
+procedure TTopPanelTest.TestKeyboardAppletAutoHideOnInputMethodTrayClient();
+var
+  origKbdX, origDispX: Integer;
+begin
+  AssertNotNull('Panel initialized', FPanel);
+  AssertNotNull('Tray widget initialized', FPanel.TrayWidget);
+  AssertNotNull('Keyboard applet initialized', FPanel.KeyboardApplet);
+  AssertNotNull('Display applet initialized', FPanel.DisplayApplet);
+
+  // 1. By default, with no IME tray client, Keyboard applet is visible
+  FPanel.TrayWidget.ForceInputMethodClient := False;
+  FPanel.UpdateAppletPositions();
+
+  AssertTrue('Keyboard applet should be visible initially without IME tray client',
+    FPanel.KeyboardApplet.Button.Visible);
+  origKbdX := FPanel.KeyboardApplet.Button.X;
+  origDispX := FPanel.DisplayApplet.Button.X;
+
+  AssertEquals('Keyboard button is adjacent to Volume',
+    FPanel.VolumeApplet.Button.X - 4 - 36, origKbdX);
+  AssertEquals('Display button is adjacent to Keyboard',
+    origKbdX - 4 - 36, origDispX);
+
+  // 2. When an IME tray client docks (e.g. IBus / Mozc), Keyboard applet auto-hides
+  FPanel.TrayWidget.ForceInputMethodClient := True;
+  FPanel.UpdateAppletPositions();
+
+  AssertFalse('Keyboard applet should auto-hide when IME client is docked in tray',
+    FPanel.KeyboardApplet.Button.Visible);
+
+  // Display applet collapses leftward into Keyboard's position
+  AssertEquals('Display applet shifts adjacent to Volume when Keyboard is hidden',
+    FPanel.VolumeApplet.Button.X - 4 - 36, FPanel.DisplayApplet.Button.X);
+
+  // 3. When IME tray client departs, Keyboard applet reappears
+  FPanel.TrayWidget.ForceInputMethodClient := False;
+  FPanel.UpdateAppletPositions();
+
+  AssertTrue('Keyboard applet should reappear when IME client departs',
+    FPanel.KeyboardApplet.Button.Visible);
+  AssertEquals('Keyboard button returns to original position',
+    origKbdX, FPanel.KeyboardApplet.Button.X);
+  AssertEquals('Display button returns to original position',
+    origDispX, FPanel.DisplayApplet.Button.X);
 end;
 
 initialization

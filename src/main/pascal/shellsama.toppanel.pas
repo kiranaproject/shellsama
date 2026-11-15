@@ -112,6 +112,7 @@ type
     function PanelHeight(): Integer;
     function GetBackgroundOpacity(): Double;
     procedure SetBackgroundOpacity(AValue: Double);
+    procedure UpdateAppletPositions();
 
     property IsVisible       : Boolean          read FIsVisible;
     property BackgroundOpacity: Double          read GetBackgroundOpacity write SetBackgroundOpacity;
@@ -414,22 +415,77 @@ begin
 end;
 
 procedure TShellTopPanel.HandleTrayLayoutChanged(Sender: TObject);
-var
-  trayW, trayX: Integer;
 begin
+  UpdateAppletPositions();
+end;
+
+procedure TShellTopPanel.UpdateAppletPositions();
+var
+  curX, trayW, trayX: Integer;
+  showKeyboard: Boolean;
+begin
+  if not Assigned(FVolumeApplet) or not Assigned(FVolumeApplet.Button) then Exit;
+
+  // Auto-hide keyboard applet if system tray hosts an input method client (IBus, Mozc, Fcitx, etc.)
+  showKeyboard := True;
+  if Assigned(FTray) and FTray.HasInputMethodClient() then
+    showKeyboard := False;
+
+  if Assigned(FKeyboardApplet) and Assigned(FKeyboardApplet.Button) then
+  begin
+    if showKeyboard <> FKeyboardApplet.Button.Visible then
+    begin
+      FKeyboardApplet.Button.Visible := showKeyboard;
+      if not showKeyboard and (FActiveApplet = pakKeyboard) then
+        DismissAllApplets();
+    end;
+  end;
+
+  curX := FVolumeApplet.Button.X;
+
+  if showKeyboard and Assigned(FKeyboardApplet) and Assigned(FKeyboardApplet.Button) then
+  begin
+    curX := curX - TOPPANEL_GAP - TOPPANEL_KEYBOARD_W;
+    FKeyboardApplet.SetBounds(curX, 3, TOPPANEL_KEYBOARD_W, 32);
+  end;
+
+  if Assigned(FDisplayApplet) and Assigned(FDisplayApplet.Button) then
+  begin
+    curX := curX - TOPPANEL_GAP - TOPPANEL_DISPLAY_W;
+    FDisplayApplet.SetBounds(curX, 3, TOPPANEL_DISPLAY_W, 32);
+  end;
+
+  if Assigned(FBatteryApplet) and Assigned(FBatteryApplet.Button) then
+  begin
+    curX := curX - TOPPANEL_GAP - TOPPANEL_BATTERY_W;
+    FBatteryApplet.SetBounds(curX, 3, TOPPANEL_BATTERY_W, 32);
+  end;
+
+  if Assigned(FBluetoothApplet) and Assigned(FBluetoothApplet.Button) then
+  begin
+    curX := curX - TOPPANEL_GAP - TOPPANEL_BLUETOOTH_W;
+    FBluetoothApplet.SetBounds(curX, 3, TOPPANEL_BLUETOOTH_W, 32);
+  end;
+
+  if Assigned(FWiredApplet) and Assigned(FWiredApplet.Button) then
+  begin
+    curX := curX - TOPPANEL_GAP - TOPPANEL_WIRED_W;
+    FWiredApplet.SetBounds(curX, 3, TOPPANEL_WIRED_W, 32);
+  end;
+
+  if Assigned(FLanApplet) and Assigned(FLanApplet.Button) then
+  begin
+    curX := curX - TOPPANEL_GAP - TOPPANEL_LAN_W;
+    FLanApplet.SetBounds(curX, 3, TOPPANEL_LAN_W, 32);
+  end;
+
   if Assigned(FTray) then
   begin
     trayW := FTray.Width;
     if Assigned(FLanApplet) and Assigned(FLanApplet.Button) then
       trayX := FLanApplet.Button.X - TOPPANEL_TRAY_GAP - trayW
     else
-      trayX := (FPanelWidth - (TOPPANEL_RIGHT_INSET + TOPPANEL_SHOW_DESKTOP_W + TOPPANEL_GAP +
-                               TOPPANEL_SESSION_W + TOPPANEL_GAP + TOPPANEL_CLOCK_W +
-                               TOPPANEL_GAP + TOPPANEL_VOLUME_W + TOPPANEL_GAP +
-                               TOPPANEL_KEYBOARD_W + TOPPANEL_GAP + TOPPANEL_DISPLAY_W + TOPPANEL_GAP +
-                               TOPPANEL_BATTERY_W + TOPPANEL_GAP + TOPPANEL_BLUETOOTH_W +
-                               TOPPANEL_GAP + TOPPANEL_WIRED_W + TOPPANEL_GAP +
-                               TOPPANEL_LAN_W + TOPPANEL_TRAY_GAP)) - trayW;
+      trayX := curX - TOPPANEL_TRAY_GAP - trayW;
     FTray.SetPosition(trayX, (FPanelHeight - FTray.IconSize) div 2);
   end;
 end;
@@ -534,6 +590,7 @@ end;
 
 procedure TShellTopPanel.HandleKeyboardButtonClick(Sender: TFtButton);
 begin
+  if not Assigned(FKeyboardApplet) or not Assigned(FKeyboardApplet.Button) or not FKeyboardApplet.Button.Visible then Exit;
   if FActiveApplet = pakKeyboard then
     DismissAllApplets()
   else
@@ -542,6 +599,7 @@ end;
 
 procedure TShellTopPanel.HandleKeyboardButtonHover(Sender: TFtButton; Hovered: Boolean);
 begin
+  if not Assigned(FKeyboardApplet) or not Assigned(FKeyboardApplet.Button) or not FKeyboardApplet.Button.Visible then Exit;
   if Hovered and FTrackingActive and (FActiveApplet <> pakKeyboard) then
     ActivateApplet(pakKeyboard);
 end;
@@ -614,7 +672,7 @@ begin
       if Assigned(FVolumeApplet) then
         FVolumeApplet.ShowPopup();
     pakKeyboard:
-      if Assigned(FKeyboardApplet) then
+      if Assigned(FKeyboardApplet) and Assigned(FKeyboardApplet.Button) and FKeyboardApplet.Button.Visible then
         FKeyboardApplet.ShowPopup();
     pakDisplay:
       if Assigned(FDisplayApplet) then
@@ -648,7 +706,7 @@ begin
     FVolumeApplet.Button.Toggled := (FActiveApplet = pakVolume);
 
   if Assigned(FKeyboardApplet) and Assigned(FKeyboardApplet.Button) then
-    FKeyboardApplet.Button.Toggled := (FActiveApplet = pakKeyboard);
+    FKeyboardApplet.Button.Toggled := (FActiveApplet = pakKeyboard) and FKeyboardApplet.Button.Visible;
 
   if Assigned(FDisplayApplet) and Assigned(FDisplayApplet.Button) then
     FDisplayApplet.Button.Toggled := (FActiveApplet = pakDisplay);
@@ -808,6 +866,7 @@ begin
   FTray.StartY := (FPanelHeight - FTray.IconSize) div 2;
   FTray.OnLayoutChanged := @HandleTrayLayoutChanged;
   FTray.ClaimSelection();
+  UpdateAppletPositions();
 
   ApplyThemeStyle();
   UpdateClock();
@@ -934,6 +993,8 @@ begin
     FWiredApplet.Tick();
   if Assigned(FLanApplet) then
     FLanApplet.Tick();
+
+  UpdateAppletPositions();
 
   // If tracking mode is active, monitor whether the active popup was closed externally
   if FTrackingActive then

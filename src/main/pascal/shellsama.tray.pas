@@ -37,6 +37,10 @@ type
     FAtomXEmbed        : Cardinal; // _XEMBED
     FAtomXEmbedInfo    : Cardinal; // _XEMBED_INFO
     FAtomManager       : Cardinal; // MANAGER
+    FAtomWMClass       : Cardinal; // WM_CLASS
+    FAtomNetWmName     : Cardinal; // _NET_WM_NAME
+    FAtomNetWmPid      : Cardinal; // _NET_WM_PID
+    FForceInputMethodClient: Boolean;
 
     FStartX            : Integer;
     FStartY            : Integer;
@@ -47,6 +51,7 @@ type
 
     procedure InitAtoms();
     function InternAtom(const AName: string): Cardinal;
+    function IsInputMethodWindow(AWin: Cardinal): Boolean;
   public
     constructor Create(APanelWindow: TFtWindow; AScreenIdx: Integer = 0);
     destructor Destroy(); override;
@@ -63,6 +68,7 @@ type
     function GetWidth(): Integer;
     function GetClientCount(): Integer;
     function GetClient(AIndex: Integer): Cardinal;
+    function HasInputMethodClient(): Boolean;
 
     function HandleX11Event(AEvent: Pointer): Boolean;
 
@@ -74,6 +80,7 @@ type
     property IconSize       : Integer read FIconSize write FIconSize;
     property IconGap        : Integer read FIconGap write FIconGap;
     property AtomTrayOpcode : Cardinal read FAtomTrayOpcode;
+    property ForceInputMethodClient: Boolean read FForceInputMethodClient write FForceInputMethodClient;
     property OnLayoutChanged: TNotifyEvent read FOnLayoutChanged write FOnLayoutChanged;
   end;
 
@@ -185,6 +192,9 @@ begin
   FAtomXEmbed         := InternAtom('_XEMBED');
   FAtomXEmbedInfo     := InternAtom('_XEMBED_INFO');
   FAtomManager        := InternAtom('MANAGER');
+  FAtomWMClass        := InternAtom('WM_CLASS');
+  FAtomNetWmName      := InternAtom('_NET_WM_NAME');
+  FAtomNetWmPid       := InternAtom('_NET_WM_PID');
 end;
 
 function TShellSystemTray.ClaimSelection(): Boolean;
@@ -419,6 +429,143 @@ begin
     Result := FDockedClients[AIndex]
   else
     Result := 0;
+end;
+
+function MatchesIMEString(const S: string): Boolean;
+var
+  low: string;
+begin
+  low := LowerCase(S);
+  Result := (Pos('ibus', low) > 0) or
+            (Pos('fcitx', low) > 0) or
+            (Pos('mozc', low) > 0) or
+            (Pos('uim', low) > 0) or
+            (Pos('scim', low) > 0) or
+            (Pos('gcin', low) > 0) or
+            (Pos('hime', low) > 0);
+end;
+
+function TShellSystemTray.IsInputMethodWindow(AWin: Cardinal): Boolean;
+var
+  cookie: xcb_get_property_cookie_t;
+  reply: Pxcb_get_property_reply_t;
+  len: Integer;
+  pStr, pNext: PChar;
+  resName, resClass, winName: string;
+  pid: Cardinal;
+  procFile: TextFile;
+  commLine: string;
+begin
+  Result := False;
+  if (FConn = nil) or (AWin = 0) then Exit;
+
+  // 1. Check WM_CLASS
+  if FAtomWMClass <> 0 then
+  begin
+    cookie := xcb_get_property(FConn, 0, AWin, FAtomWMClass, XCB_ATOM_STRING, 0, 128);
+    reply := xcb_get_property_reply(FConn, cookie, nil);
+    if reply <> nil then
+    begin
+      try
+        len := xcb_get_property_value_length(reply);
+        if len > 0 then
+        begin
+          pStr := PChar(xcb_get_property_value(reply));
+          resName := StrPas(pStr);
+          pNext := pStr + Length(resName) + 1;
+          if (pNext - pStr) < len then
+            resClass := StrPas(pNext)
+          else
+            resClass := '';
+
+          if MatchesIMEString(resName) or MatchesIMEString(resClass) then
+          begin
+            Result := True;
+            Exit;
+          end;
+        end;
+      finally
+        c_free(reply);
+      end;
+    end;
+  end;
+
+  // 2. Check _NET_WM_NAME
+  if FAtomNetWmName <> 0 then
+  begin
+    cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmName, 0, 0, 64);
+    reply := xcb_get_property_reply(FConn, cookie, nil);
+    if reply <> nil then
+    begin
+      try
+        len := xcb_get_property_value_length(reply);
+        if len > 0 then
+        begin
+          SetString(winName, PAnsiChar(xcb_get_property_value(reply)), len);
+          if MatchesIMEString(winName) then
+          begin
+            Result := True;
+            Exit;
+          end;
+        end;
+      finally
+        c_free(reply);
+      end;
+    end;
+  end;
+
+  // 3. Check process command name via _NET_WM_PID
+  if FAtomNetWmPid <> 0 then
+  begin
+    cookie := xcb_get_property(FConn, 0, AWin, FAtomNetWmPid, XCB_ATOM_CARDINAL, 0, 1);
+    reply := xcb_get_property_reply(FConn, cookie, nil);
+    if reply <> nil then
+    begin
+      try
+        len := xcb_get_property_value_length(reply);
+        if len >= 4 then
+        begin
+          pid := PCardinal(xcb_get_property_value(reply))^;
+          if (pid > 0) and FileExists('/proc/' + IntToStr(pid) + '/comm') then
+          begin
+            try
+              AssignFile(procFile, '/proc/' + IntToStr(pid) + '/comm');
+              Reset(procFile);
+              if not Eof(procFile) then
+                ReadLn(procFile, commLine);
+              CloseFile(procFile);
+              if MatchesIMEString(commLine) then
+              begin
+                Result := True;
+                Exit;
+              end;
+            except
+              // Ignore procfs read error
+            end;
+          end;
+        end;
+      finally
+        c_free(reply);
+      end;
+    end;
+  end;
+end;
+
+function TShellSystemTray.HasInputMethodClient(): Boolean;
+var
+  i: Integer;
+begin
+  if FForceInputMethodClient then Exit(True);
+
+  Result := False;
+  for i := 0 to High(FDockedClients) do
+  begin
+    if IsInputMethodWindow(FDockedClients[i]) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
 end;
 
 function TShellSystemTray.HandleX11Event(AEvent: Pointer): Boolean;
