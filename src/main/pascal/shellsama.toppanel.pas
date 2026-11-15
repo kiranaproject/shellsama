@@ -21,7 +21,7 @@ type
   PCardinalArray = ^TCardinalArray;
   TCardinalArray = array[0..4] of Cardinal;
 
-  TPanelAppletKind = (pakNone, pakVolume, pakClock, pakSession, pakBattery, pakBluetooth, pakWired, pakLan);
+  TPanelAppletKind = (pakNone, pakVolume, pakClock, pakSession, pakBattery, pakBluetooth, pakWired, pakLan, pakKeyboard, pakDisplay);
 
   TShellTopPanel = class
   private
@@ -31,6 +31,8 @@ type
     FSessionApplet  : TShellSessionApplet;
     FClockApplet    : TShellClockApplet;
     FVolumeApplet   : TShellVolumeApplet;
+    FKeyboardApplet : TShellKeyboardApplet;
+    FDisplayApplet  : TShellDisplayApplet;
     FBatteryApplet  : TShellBatteryApplet;
     FBluetoothApplet: TShellBluetoothApplet;
     FWiredApplet    : TShellWiredApplet;
@@ -78,6 +80,10 @@ type
     procedure HandleWiredButtonHover(Sender: TFtButton; Hovered: Boolean);
     procedure HandleLanButtonClick(Sender: TFtButton);
     procedure HandleLanButtonHover(Sender: TFtButton; Hovered: Boolean);
+    procedure HandleKeyboardButtonClick(Sender: TFtButton);
+    procedure HandleKeyboardButtonHover(Sender: TFtButton; Hovered: Boolean);
+    procedure HandleDisplayButtonClick(Sender: TFtButton);
+    procedure HandleDisplayButtonHover(Sender: TFtButton; Hovered: Boolean);
     procedure HandleAppletDismiss(Sender: TObject);
     procedure HandleSettingsDarkModeChange(Sender: TObject);
     procedure HandleSettingsClockFormatChange(Sender: TObject);
@@ -116,6 +122,8 @@ type
     property ShowDesktopWidget: TFtButton       read FShowDesktopBtn;
     property TrayWidget      : TShellSystemTray read FTray;
     property VolumeApplet    : TShellVolumeApplet read FVolumeApplet;
+    property KeyboardApplet  : TShellKeyboardApplet read FKeyboardApplet;
+    property DisplayApplet   : TShellDisplayApplet  read FDisplayApplet;
     property BatteryApplet   : TShellBatteryApplet   read FBatteryApplet;
     property BluetoothApplet : TShellBluetoothApplet read FBluetoothApplet;
     property WiredApplet     : TShellWiredApplet     read FWiredApplet;
@@ -149,6 +157,8 @@ const
   TOPPANEL_SESSION_W      = 32;
   TOPPANEL_CLOCK_W        = 216;
   TOPPANEL_VOLUME_W       = 36;
+  TOPPANEL_KEYBOARD_W     = 36;
+  TOPPANEL_DISPLAY_W      = 36;
   TOPPANEL_BATTERY_W      = 36;
   TOPPANEL_BLUETOOTH_W    = 36;
   TOPPANEL_WIRED_W        = 36;
@@ -348,6 +358,18 @@ begin
     FBatteryApplet := nil;
   end;
 
+  if Assigned(FDisplayApplet) then
+  begin
+    FDisplayApplet.Free();
+    FDisplayApplet := nil;
+  end;
+
+  if Assigned(FKeyboardApplet) then
+  begin
+    FKeyboardApplet.Free();
+    FKeyboardApplet := nil;
+  end;
+
   if Assigned(FVolumeApplet) then
   begin
     FVolumeApplet.Free();
@@ -404,6 +426,7 @@ begin
       trayX := (FPanelWidth - (TOPPANEL_RIGHT_INSET + TOPPANEL_SHOW_DESKTOP_W + TOPPANEL_GAP +
                                TOPPANEL_SESSION_W + TOPPANEL_GAP + TOPPANEL_CLOCK_W +
                                TOPPANEL_GAP + TOPPANEL_VOLUME_W + TOPPANEL_GAP +
+                               TOPPANEL_KEYBOARD_W + TOPPANEL_GAP + TOPPANEL_DISPLAY_W + TOPPANEL_GAP +
                                TOPPANEL_BATTERY_W + TOPPANEL_GAP + TOPPANEL_BLUETOOTH_W +
                                TOPPANEL_GAP + TOPPANEL_WIRED_W + TOPPANEL_GAP +
                                TOPPANEL_LAN_W + TOPPANEL_TRAY_GAP)) - trayW;
@@ -509,6 +532,34 @@ begin
     ActivateApplet(pakLan);
 end;
 
+procedure TShellTopPanel.HandleKeyboardButtonClick(Sender: TFtButton);
+begin
+  if FActiveApplet = pakKeyboard then
+    DismissAllApplets()
+  else
+    ActivateApplet(pakKeyboard);
+end;
+
+procedure TShellTopPanel.HandleKeyboardButtonHover(Sender: TFtButton; Hovered: Boolean);
+begin
+  if Hovered and FTrackingActive and (FActiveApplet <> pakKeyboard) then
+    ActivateApplet(pakKeyboard);
+end;
+
+procedure TShellTopPanel.HandleDisplayButtonClick(Sender: TFtButton);
+begin
+  if FActiveApplet = pakDisplay then
+    DismissAllApplets()
+  else
+    ActivateApplet(pakDisplay);
+end;
+
+procedure TShellTopPanel.HandleDisplayButtonHover(Sender: TFtButton; Hovered: Boolean);
+begin
+  if Hovered and FTrackingActive and (FActiveApplet <> pakDisplay) then
+    ActivateApplet(pakDisplay);
+end;
+
 procedure TShellTopPanel.HandleAppletDismiss(Sender: TObject);
 begin
   DismissAllApplets();
@@ -518,6 +569,12 @@ procedure TShellTopPanel.CloseAllApplets();
 begin
   if Assigned(FVolumeApplet) and FVolumeApplet.IsPopupOpen() then
     FVolumeApplet.HidePopup();
+
+  if Assigned(FKeyboardApplet) and FKeyboardApplet.IsPopupOpen() then
+    FKeyboardApplet.HidePopup();
+
+  if Assigned(FDisplayApplet) and FDisplayApplet.IsPopupOpen() then
+    FDisplayApplet.HidePopup();
 
   if Assigned(FClockApplet) and FClockApplet.IsPopupOpen() then
     FClockApplet.HidePopup();
@@ -556,6 +613,12 @@ begin
     pakVolume:
       if Assigned(FVolumeApplet) then
         FVolumeApplet.ShowPopup();
+    pakKeyboard:
+      if Assigned(FKeyboardApplet) then
+        FKeyboardApplet.ShowPopup();
+    pakDisplay:
+      if Assigned(FDisplayApplet) then
+        FDisplayApplet.ShowPopup();
     pakClock:
       if Assigned(FClockApplet) then
         FClockApplet.ShowPopup();
@@ -583,6 +646,12 @@ procedure TShellTopPanel.UpdateButtonStates();
 begin
   if Assigned(FVolumeApplet) and Assigned(FVolumeApplet.Button) then
     FVolumeApplet.Button.Toggled := (FActiveApplet = pakVolume);
+
+  if Assigned(FKeyboardApplet) and Assigned(FKeyboardApplet.Button) then
+    FKeyboardApplet.Button.Toggled := (FActiveApplet = pakKeyboard);
+
+  if Assigned(FDisplayApplet) and Assigned(FDisplayApplet.Button) then
+    FDisplayApplet.Button.Toggled := (FActiveApplet = pakDisplay);
 
   if Assigned(FClockApplet) and Assigned(FClockApplet.Button) then
     FClockApplet.Button.Toggled := (FActiveApplet = pakClock);
@@ -684,9 +753,25 @@ begin
   FVolumeApplet.Button.OnHover := @HandleVolumeButtonHover;
   FVolumeApplet.OnDismiss := @HandleAppletDismiss;
 
-  // 6. Battery Applet
+  // 6. Keyboard Applet (Input Method / Mozc)
+  FKeyboardApplet := TShellKeyboardApplet.Create(FWindow,
+    FVolumeApplet.Button.X - TOPPANEL_GAP - TOPPANEL_KEYBOARD_W,
+    3, TOPPANEL_KEYBOARD_W, 32);
+  FKeyboardApplet.Button.OnClick := @HandleKeyboardButtonClick;
+  FKeyboardApplet.Button.OnHover := @HandleKeyboardButtonHover;
+  FKeyboardApplet.OnDismiss := @HandleAppletDismiss;
+
+  // 7. Display Applet (Monitors / External Displays)
+  FDisplayApplet := TShellDisplayApplet.Create(FWindow,
+    FKeyboardApplet.Button.X - TOPPANEL_GAP - TOPPANEL_DISPLAY_W,
+    3, TOPPANEL_DISPLAY_W, 32);
+  FDisplayApplet.Button.OnClick := @HandleDisplayButtonClick;
+  FDisplayApplet.Button.OnHover := @HandleDisplayButtonHover;
+  FDisplayApplet.OnDismiss := @HandleAppletDismiss;
+
+  // 8. Battery Applet
   FBatteryApplet := TShellBatteryApplet.Create(FWindow,
-    FVolumeApplet.Button.X - TOPPANEL_GAP - TOPPANEL_BATTERY_W,
+    FDisplayApplet.Button.X - TOPPANEL_GAP - TOPPANEL_BATTERY_W,
     3, TOPPANEL_BATTERY_W, 32);
   FBatteryApplet.Button.OnClick := @HandleBatteryButtonClick;
   FBatteryApplet.Button.OnHover := @HandleBatteryButtonHover;
@@ -803,6 +888,12 @@ begin
   if Assigned(FVolumeApplet) then
     FVolumeApplet.ApplyThemeStyle();
 
+  if Assigned(FKeyboardApplet) then
+    FKeyboardApplet.ApplyThemeStyle();
+
+  if Assigned(FDisplayApplet) then
+    FDisplayApplet.ApplyThemeStyle();
+
   if Assigned(FBatteryApplet) then
     FBatteryApplet.ApplyThemeStyle();
 
@@ -831,6 +922,10 @@ begin
 
   if Assigned(FVolumeApplet) then
     FVolumeApplet.Tick();
+  if Assigned(FKeyboardApplet) then
+    FKeyboardApplet.Tick();
+  if Assigned(FDisplayApplet) then
+    FDisplayApplet.Tick();
   if Assigned(FBatteryApplet) then
     FBatteryApplet.Tick();
   if Assigned(FBluetoothApplet) then
@@ -846,6 +941,12 @@ begin
     case FActiveApplet of
       pakVolume:
         if Assigned(FVolumeApplet) and not FVolumeApplet.IsPopupOpen() then
+          DismissAllApplets();
+      pakKeyboard:
+        if Assigned(FKeyboardApplet) and not FKeyboardApplet.IsPopupOpen() then
+          DismissAllApplets();
+      pakDisplay:
+        if Assigned(FDisplayApplet) and not FDisplayApplet.IsPopupOpen() then
           DismissAllApplets();
       pakClock:
         if Assigned(FClockApplet) and not FClockApplet.IsPopupOpen() then

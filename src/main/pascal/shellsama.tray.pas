@@ -194,6 +194,8 @@ var
   val32: Cardinal;
   ownerCookie: xcb_get_selection_owner_cookie_t;
   ownerReply: Pxcb_get_selection_owner_reply_t;
+  attrCookie: xcb_get_window_attributes_cookie_t;
+  attrReply: Pxcb_get_window_attributes_reply_t;
 begin
   Result := False;
   if (FConn = nil) or (FPanelWindow = nil) then Exit;
@@ -207,13 +209,20 @@ begin
   xcb_change_property(FConn, XCB_PROP_MODE_REPLACE, FTrayWin,
                       FAtomTrayOrientation, XCB_ATOM_CARDINAL, 32, 1, @val32);
 
-  // 2. Set visual property (root window visual)
+  // 2. Set visual property (matching tray window visual)
+  val32 := 0;
   if FScreen <> nil then
-  begin
     val32 := FScreen^.root_visual;
-    xcb_change_property(FConn, XCB_PROP_MODE_REPLACE, FTrayWin,
-                        FAtomTrayVisual, XCB_ATOM_VISUALID, 32, 1, @val32);
+  attrCookie := xcb_get_window_attributes(FConn, FTrayWin);
+  attrReply := xcb_get_window_attributes_reply(FConn, attrCookie, nil);
+  if attrReply <> nil then
+  begin
+    if attrReply^.visual <> 0 then
+      val32 := attrReply^.visual;
+    c_free(attrReply);
   end;
+  xcb_change_property(FConn, XCB_PROP_MODE_REPLACE, FTrayWin,
+                      FAtomTrayVisual, XCB_ATOM_VISUALID, 32, 1, @val32);
 
   // 3. Set selection owner
   xcb_set_selection_owner(FConn, FTrayWin, FAtomTraySelection, XCB_CURRENT_TIME);
@@ -419,6 +428,7 @@ var
   data32: PCardinalArray;
   dne: Pxcb_destroy_notify_event_t;
   une: Pxcb_unmap_notify_event_t;
+  sce: Pxcb_selection_clear_event_t;
 begin
   Result := False;
   if AEvent = nil then Exit;
@@ -456,6 +466,16 @@ begin
       if IsDocked(une^.window) then
       begin
         UndockClient(une^.window);
+        Result := True;
+      end;
+    end;
+
+    XCB_SELECTION_CLEAR:
+    begin
+      sce := Pxcb_selection_clear_event_t(AEvent);
+      if (FAtomTraySelection <> 0) and (sce^.selection = FAtomTraySelection) then
+      begin
+        FIsActive := False;
         Result := True;
       end;
     end;

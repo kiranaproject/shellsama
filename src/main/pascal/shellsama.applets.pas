@@ -386,12 +386,158 @@ type
     property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
   end;
 
+  { TShellKeyboardApplet — Input Method & Keyboard Layout Status Applet }
+  TShellKeyboardApplet = class
+  private
+    FPanelWindow      : TFtWindow;
+    FButton           : TFtButton;
+    FPopupWindow      : TFtWindow;
+    FPlate            : TFtDrawingArea;
+    FTitleLabel       : TFtLabel;
+    FStatusLabel      : TFtLabel;
+    FDetailsLabel     : TFtLabel;
+    FSwitchBtn        : TFtButton;
+    FPreferencesBtn   : TFtButton;
+    FSettingsBtn      : TFtButton;
+
+    FCurrentLayout    : string;
+    FCurrentEngine    : string;
+    FEngineDisplayName: string;
+    FIsIbusActive     : Boolean;
+    FHasMozc          : Boolean;
+    FMockMode         : Boolean;
+    FLastCheckTick    : Int64;
+    FQueryBusy        : Boolean;
+    FOnDismiss        : TNotifyEvent;
+
+    procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandleSwitchClick(Sender: TFtButton);
+    procedure HandlePreferencesClick(Sender: TFtButton);
+    procedure HandleSettingsClick(Sender: TFtButton);
+    procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandlePopupWindowDismiss(Sender: TFtWindow);
+
+    procedure CreatePopupWindow();
+    procedure DestroyPopupWindow();
+    procedure UpdatePopupContent();
+  public
+    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+    destructor Destroy(); override;
+
+    function QueryKeyboard(out ALayout, AEngine, AEngineName: string; out AIsIbus, AHasMozc: Boolean): Boolean;
+    procedure SetKeyboardState(const ALayout, AEngine, AEngineName: string; AIsIbus: Boolean = True; AHasMozc: Boolean = True);
+    procedure SwitchEngine(const AEngine: string);
+    procedure ToggleInputMethod();
+
+    procedure UpdateUI();
+    procedure ApplyThemeStyle();
+    procedure ShowPopup();
+    procedure HidePopup();
+    procedure TogglePopup();
+    function IsPopupOpen(): Boolean;
+
+    procedure Tick();
+    procedure SetBounds(AX, AY, AW, AH: Integer);
+
+    property Button: TFtButton read FButton;
+    property CurrentLayout: string read FCurrentLayout;
+    property CurrentEngine: string read FCurrentEngine;
+    property EngineDisplayName: string read FEngineDisplayName;
+    property IsIbusActive: Boolean read FIsIbusActive;
+    property HasMozc: Boolean read FHasMozc;
+    property MockMode: Boolean read FMockMode write FMockMode;
+    property PopupWindow: TFtWindow read FPopupWindow;
+    property Plate: TFtDrawingArea read FPlate;
+    property TitleLabel: TFtLabel read FTitleLabel;
+    property StatusLabel: TFtLabel read FStatusLabel;
+    property DetailsLabel: TFtLabel read FDetailsLabel;
+    property SwitchButton: TFtButton read FSwitchBtn;
+    property PreferencesButton: TFtButton read FPreferencesBtn;
+    property SettingsButton: TFtButton read FSettingsBtn;
+    property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
+  end;
+
+  { TShellDisplayApplet — Monitor Topology & External Display Status Applet }
+  TShellDisplayApplet = class
+  private
+    FPanelWindow        : TFtWindow;
+    FButton             : TFtButton;
+    FPopupWindow        : TFtWindow;
+    FPlate              : TFtDrawingArea;
+    FTitleLabel         : TFtLabel;
+    FSummaryLabel       : TFtLabel;
+    FPrimaryLabel       : TFtLabel;
+    FSecondaryLabel     : TFtLabel;
+    FExtendBtn          : TFtButton;
+    FMirrorBtn          : TFtButton;
+    FSettingsBtn        : TFtButton;
+
+    FConnectedCount     : Integer;
+    FPrimaryName        : string;
+    FPrimaryResolution  : string;
+    FSecondaryName      : string;
+    FSecondaryResolution: string;
+    FMockMode           : Boolean;
+    FLastCheckTick      : Int64;
+    FQueryBusy          : Boolean;
+    FOnDismiss          : TNotifyEvent;
+
+    procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandleExtendClick(Sender: TFtButton);
+    procedure HandleMirrorClick(Sender: TFtButton);
+    procedure HandleSettingsClick(Sender: TFtButton);
+    procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandlePopupWindowDismiss(Sender: TFtWindow);
+
+    procedure CreatePopupWindow();
+    procedure DestroyPopupWindow();
+    procedure UpdatePopupContent();
+  public
+    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+    destructor Destroy(); override;
+
+    function QueryDisplays(out ACount: Integer; out APriName, APriRes, ASecName, ASecRes: string): Boolean;
+    procedure SetDisplayState(ACount: Integer; const APriName, APriRes: string; const ASecName: string = ''; const ASecRes: string = '');
+    procedure ExtendDisplays();
+    procedure MirrorDisplays();
+
+    procedure UpdateUI();
+    procedure ApplyThemeStyle();
+    procedure ShowPopup();
+    procedure HidePopup();
+    procedure TogglePopup();
+    function IsPopupOpen(): Boolean;
+
+    procedure Tick();
+    procedure SetBounds(AX, AY, AW, AH: Integer);
+
+    property Button: TFtButton read FButton;
+    property ConnectedCount: Integer read FConnectedCount;
+    property PrimaryName: string read FPrimaryName;
+    property PrimaryResolution: string read FPrimaryResolution;
+    property SecondaryName: string read FSecondaryName;
+    property SecondaryResolution: string read FSecondaryResolution;
+    property MockMode: Boolean read FMockMode write FMockMode;
+    property PopupWindow: TFtWindow read FPopupWindow;
+    property Plate: TFtDrawingArea read FPlate;
+    property TitleLabel: TFtLabel read FTitleLabel;
+    property SummaryLabel: TFtLabel read FSummaryLabel;
+    property PrimaryLabel: TFtLabel read FPrimaryLabel;
+    property SecondaryLabel: TFtLabel read FSecondaryLabel;
+    property ExtendButton: TFtButton read FExtendBtn;
+    property MirrorButton: TFtButton read FMirrorBtn;
+    property SettingsButton: TFtButton read FSettingsBtn;
+    property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
+  end;
+
 function GetPowerIconSVG(AIsDark: Boolean): string;
 function GetVolumeIconSVG(AKind: TVolumeIconKind; AIsDark: Boolean): string;
 function GetBatteryIconSVG(APercent: Integer; ACharging: Boolean; APresent: Boolean; AIsDark: Boolean): string;
 function GetWiredIconSVG(AConnected: Boolean; AIsDark: Boolean): string;
 function GetLanIconSVG(AConnected: Boolean; ASignal: Integer; AEnabled: Boolean; AIsDark: Boolean): string;
 function GetBluetoothIconSVG(AEnabled: Boolean; AConnected: Boolean; AIsDark: Boolean): string;
+function GetKeyboardIconSVG(const ALayout: string; AIsDark: Boolean): string;
+function GetDisplayIconSVG(AMonitorCount: Integer; AIsDark: Boolean): string;
 
 implementation
 
@@ -658,6 +804,52 @@ begin
   end;
 
   Result := Result + '</svg>';
+end;
+
+function GetKeyboardIconSVG(const ALayout: string; AIsDark: Boolean): string;
+var
+  c: string;
+begin
+  if AIsDark then
+    c := SVG_ICON_COLOR_DARK
+  else
+    c := SVG_ICON_COLOR_LIGHT;
+
+  Result :=
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="2" y="4" width="20" height="16" rx="2"/>' +
+    '<path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M6 12h.001M10 12h.001M14 12h.001M18 12h.001M7 16h10"/>' +
+    '</svg>';
+end;
+
+function GetDisplayIconSVG(AMonitorCount: Integer; AIsDark: Boolean): string;
+var
+  c: string;
+begin
+  if AIsDark then
+    c := SVG_ICON_COLOR_DARK
+  else
+    c := SVG_ICON_COLOR_LIGHT;
+
+  if AMonitorCount > 1 then
+  begin
+    Result :=
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<rect x="1" y="5" width="13" height="10" rx="1.5"/>' +
+      '<rect x="10" y="8" width="13" height="10" rx="1.5"/>' +
+      '<line x1="4" y1="18" x2="10" y2="18"/>' +
+      '<line x1="14" y1="21" x2="20" y2="21"/>' +
+      '</svg>';
+  end
+  else
+  begin
+    Result :=
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<rect x="2" y="3" width="20" height="14" rx="2"/>' +
+      '<line x1="8" y1="21" x2="16" y2="21"/>' +
+      '<line x1="12" y1="17" x2="12" y2="21"/>' +
+      '</svg>';
+  end;
 end;
 
 procedure ExecShellCmdAsync(const ACmd: string);
@@ -3188,6 +3380,1060 @@ begin
         FIsEnabled := curEn;
         FIsConnected := curConn;
         FConnectedDevice := curDev;
+        UpdateUI();
+        if IsPopupOpen() then
+        begin
+          UpdatePopupContent();
+          if Assigned(FPlate) then
+            FPlate.Invalidate();
+        end;
+      end;
+    end;
+  finally
+    FQueryBusy := False;
+  end;
+end;
+
+// =============================================================================
+// TShellKeyboardApplet Implementation
+// =============================================================================
+
+constructor TShellKeyboardApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+begin
+  inherited Create();
+  FPanelWindow := AParentWindow;
+  FCurrentLayout := 'US';
+  FCurrentEngine := 'xkb:us::eng';
+  FEngineDisplayName := 'English (US)';
+  FIsIbusActive := False;
+  FHasMozc := False;
+  FMockMode := False;
+  FLastCheckTick := 0;
+  FQueryBusy := False;
+
+  if Assigned(FPanelWindow) then
+  begin
+    FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
+    FButton.IsToggle := True;
+    FButton.Flat := True;
+    FButton.CornerRadius := 6.0;
+    FButton.IconPosition := ftipOnly;
+    FButton.SetIconSize(18, 18);
+    FButton.OnClick := @HandleButtonClick;
+  end;
+
+  QueryKeyboard(FCurrentLayout, FCurrentEngine, FEngineDisplayName, FIsIbusActive, FHasMozc);
+  UpdateUI();
+  ApplyThemeStyle();
+end;
+
+destructor TShellKeyboardApplet.Destroy();
+begin
+  DestroyPopupWindow();
+  if Assigned(FButton) then
+  begin
+    FButton.Free();
+    FButton := nil;
+  end;
+  inherited Destroy();
+end;
+
+function libc_setenv(name: PChar; value: PChar; overwrite: LongInt): LongInt; cdecl; external 'c' name 'setenv';
+
+function TShellKeyboardApplet.QueryKeyboard(out ALayout, AEngine, AEngineName: string; out AIsIbus, AHasMozc: Boolean): Boolean;
+var
+  ibusOut, xkbOut: string;
+  lines: TStringList;
+  i, p: Integer;
+  lineStr, busDir, addrVal: string;
+  sr: TSearchRec;
+begin
+  ALayout := 'US';
+  AEngine := 'xkb:us::eng';
+  AEngineName := 'English (US)';
+  AIsIbus := False;
+  AHasMozc := False;
+  Result := False;
+
+  // Ensure IBUS_ADDRESS is discovered from ~/.config/ibus/bus/ if unset
+  if GetEnvironmentVariable('IBUS_ADDRESS') = '' then
+  begin
+    busDir := GetEnvironmentVariable('HOME') + '/.config/ibus/bus/';
+    if DirectoryExists(busDir) then
+    begin
+      if FindFirst(busDir + '*-unix-*', faAnyFile, sr) = 0 then
+      begin
+        try
+          repeat
+            if (sr.Name <> '.') and (sr.Name <> '..') then
+            begin
+              lines := TStringList.Create();
+              try
+                lines.LoadFromFile(busDir + sr.Name);
+                for i := 0 to lines.Count - 1 do
+                begin
+                  lineStr := Trim(lines[i]);
+                  if Pos('IBUS_ADDRESS=', lineStr) = 1 then
+                  begin
+                    addrVal := Copy(lineStr, 14, Length(lineStr));
+                    libc_setenv('IBUS_ADDRESS', PChar(addrVal), 1);
+                    Break;
+                  end;
+                end;
+              finally
+                lines.Free();
+              end;
+              if GetEnvironmentVariable('IBUS_ADDRESS') <> '' then Break;
+            end;
+          until FindNext(sr) <> 0;
+        finally
+          FindClose(sr);
+        end;
+      end;
+    end;
+  end;
+
+  // 1. Probe ibus if available
+  if RunCommand('/usr/bin/ibus', ['engine'], ibusOut) then
+  begin
+    ibusOut := Trim(ibusOut);
+    if ibusOut <> '' then
+    begin
+      AIsIbus := True;
+      AEngine := ibusOut;
+      Result := True;
+
+      if Pos('mozc', LowerCase(ibusOut)) > 0 then
+      begin
+        ALayout := 'JA';
+        AEngineName := 'Mozc (Japanese)';
+        AHasMozc := True;
+      end
+      else if Pos('xkb:', LowerCase(ibusOut)) = 1 then
+      begin
+        lines := TStringList.Create();
+        try
+          lines.Delimiter := ':';
+          lines.StrictDelimiter := True;
+          lines.DelimitedText := ibusOut;
+          if lines.Count > 1 then
+            ALayout := UpperCase(lines[1])
+          else
+            ALayout := 'EN';
+        finally
+          lines.Free();
+        end;
+        if ALayout = 'US' then
+          AEngineName := 'English (US)'
+        else if ALayout = 'JP' then
+          AEngineName := 'Japanese (xkb)'
+        else
+          AEngineName := 'Keyboard (' + ALayout + ')';
+      end
+      else
+      begin
+        ALayout := UpperCase(Copy(ibusOut, 1, 2));
+        AEngineName := ibusOut;
+      end;
+    end;
+  end;
+
+  // Check if Mozc is installed
+  if not AHasMozc then
+  begin
+    if FileExists('/usr/lib/ibus-mozc/ibus-engine-mozc') or
+       FileExists('/usr/share/ibus/component/mozc.xml') or
+       DirectoryExists('/usr/share/ibus-mozc') then
+      AHasMozc := True;
+  end;
+
+  // 2. Fallback to setxkbmap if ibus is not active
+  if not AIsIbus then
+  begin
+    if RunCommand('/usr/bin/setxkbmap', ['-query'], xkbOut) then
+    begin
+      lines := TStringList.Create();
+      try
+        lines.Text := xkbOut;
+        for i := 0 to lines.Count - 1 do
+        begin
+          lineStr := Trim(lines[i]);
+          p := Pos('layout:', lineStr);
+          if p = 1 then
+          begin
+            ALayout := UpperCase(Trim(Copy(lineStr, 8, Length(lineStr))));
+            AEngine := 'xkb:' + LowerCase(ALayout);
+            if ALayout = 'US' then
+              AEngineName := 'English (US)'
+            else
+              AEngineName := 'Standard (' + ALayout + ')';
+            Result := True;
+            Break;
+          end;
+        end;
+      finally
+        lines.Free();
+      end;
+    end;
+  end;
+end;
+
+procedure TShellKeyboardApplet.SetKeyboardState(const ALayout, AEngine, AEngineName: string; AIsIbus: Boolean; AHasMozc: Boolean);
+begin
+  FCurrentLayout := ALayout;
+  FCurrentEngine := AEngine;
+  FEngineDisplayName := AEngineName;
+  FIsIbusActive := AIsIbus;
+  FHasMozc := AHasMozc;
+  UpdateUI();
+  if IsPopupOpen() then
+  begin
+    UpdatePopupContent();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellKeyboardApplet.SwitchEngine(const AEngine: string);
+var
+  dummy: string;
+begin
+  if FMockMode then
+  begin
+    FCurrentEngine := AEngine;
+    if Pos('mozc', LowerCase(AEngine)) > 0 then
+    begin
+      FCurrentLayout := 'JA';
+      FEngineDisplayName := 'Mozc (Japanese)';
+    end
+    else
+    begin
+      FCurrentLayout := 'US';
+      FEngineDisplayName := 'English (US)';
+    end;
+    UpdateUI();
+    if IsPopupOpen() then
+    begin
+      UpdatePopupContent();
+      if Assigned(FPlate) then
+        FPlate.Invalidate();
+    end;
+    Exit;
+  end;
+
+  if FIsIbusActive and (AEngine <> '') then
+  begin
+    RunCommand('/usr/bin/ibus', ['engine', AEngine], dummy);
+    Tick();
+  end;
+end;
+
+procedure TShellKeyboardApplet.ToggleInputMethod();
+begin
+  if Pos('mozc', LowerCase(FCurrentEngine)) > 0 then
+    SwitchEngine('xkb:us::eng')
+  else
+    SwitchEngine('mozc-jp');
+end;
+
+procedure TShellKeyboardApplet.UpdateUI();
+begin
+  if Assigned(FButton) then
+  begin
+    FButton.Caption := '';
+    FButton.IconPosition := ftipOnly;
+    FButton.SetIconSize(18, 18);
+    FButton.SetIconSVG(GetKeyboardIconSVG(FCurrentLayout, IsDarkTheme()));
+    FButton.Hint := 'Keyboard: ' + FEngineDisplayName;
+  end;
+end;
+
+procedure TShellKeyboardApplet.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  isDark := IsDarkTheme();
+  UpdateUI();
+
+  if Assigned(FTitleLabel) then
+  begin
+    if isDark then
+      FTitleLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FTitleLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FStatusLabel) then
+  begin
+    if isDark then
+      FStatusLabel.SetColor(0.85, 0.88, 0.95)
+    else
+      FStatusLabel.SetColor(0.12, 0.16, 0.23);
+  end;
+
+  if Assigned(FDetailsLabel) then
+  begin
+    if isDark then
+      FDetailsLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FDetailsLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+  if Assigned(FSwitchBtn) then
+    FSwitchBtn.Invalidate();
+  if Assigned(FPreferencesBtn) then
+    FPreferencesBtn.Invalidate();
+  if Assigned(FSettingsBtn) then
+    FSettingsBtn.Invalidate();
+  if Assigned(FPopupWindow) then
+    FPopupWindow.Invalidate();
+end;
+
+procedure TShellKeyboardApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  isDark: Boolean;
+begin
+  if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+  isDark := IsDarkTheme();
+  if isDark then
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 24 / 255, 25 / 255, 38 / 255, 0.98);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 69 / 255, 71 / 255, 90 / 255, 0.80);
+  end
+  else
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+  end;
+end;
+
+procedure TShellKeyboardApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+end;
+
+procedure TShellKeyboardApplet.CreatePopupWindow();
+var
+  popX, popY, popW, popH: Integer;
+begin
+  if Assigned(FPopupWindow) then Exit;
+
+  popW := 250;
+  popH := 160;
+
+  if Assigned(FButton) and Assigned(FPanelWindow) then
+  begin
+    popX := FButton.X + (FButton.Width - popW) div 2;
+    popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
+  end
+  else
+  begin
+    popX := 100;
+    popY := 100;
+  end;
+
+  FPopupWindow := TFtWindow.Create(popW, popH, 'shellsama-keyboard-popup');
+  FPopupWindow.WindowType := ftwtPopupMenu;
+  FPopupWindow.Borderless := True;
+  FPopupWindow.SkipTaskbar := True;
+  FPopupWindow.SetPosition(popX, popY);
+  FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
+
+  FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
+  FPlate.OnPaint := @HandlePlatePaint;
+
+  FTitleLabel := TFtLabel.Create(FPopupWindow, 16, 10, popW - 32, 18, 'Keyboard & Input Method');
+  FTitleLabel.Alignment := ftaLeft;
+
+  FStatusLabel := TFtLabel.Create(FPopupWindow, 16, 32, popW - 32, 16, '');
+  FStatusLabel.Alignment := ftaLeft;
+
+  FDetailsLabel := TFtLabel.Create(FPopupWindow, 16, 50, popW - 32, 16, '');
+  FDetailsLabel.Alignment := ftaLeft;
+
+  FSwitchBtn := TFtButton.Create(FPopupWindow, 16, 72, popW - 32, 24, 'Switch Input Method');
+  FSwitchBtn.Flat := True;
+  FSwitchBtn.CornerRadius := 4.0;
+  FSwitchBtn.OnClick := @HandleSwitchClick;
+
+  FPreferencesBtn := TFtButton.Create(FPopupWindow, 16, 100, popW - 32, 24, 'Input Method Preferences...');
+  FPreferencesBtn.Flat := True;
+  FPreferencesBtn.CornerRadius := 4.0;
+  FPreferencesBtn.OnClick := @HandlePreferencesClick;
+
+  FSettingsBtn := TFtButton.Create(FPopupWindow, 16, 128, popW - 32, 24, 'Keyboard Settings...');
+  FSettingsBtn.Flat := True;
+  FSettingsBtn.CornerRadius := 4.0;
+  FSettingsBtn.OnClick := @HandleSettingsClick;
+
+  UpdatePopupContent();
+  ApplyThemeStyle();
+end;
+
+procedure TShellKeyboardApplet.DestroyPopupWindow();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPlate := nil;
+    FTitleLabel := nil;
+    FStatusLabel := nil;
+    FDetailsLabel := nil;
+    FSwitchBtn := nil;
+    FPreferencesBtn := nil;
+    FSettingsBtn := nil;
+    FPopupWindow.Free();
+    FPopupWindow := nil;
+  end;
+end;
+
+procedure TShellKeyboardApplet.UpdatePopupContent();
+begin
+  if Assigned(FStatusLabel) then
+    FStatusLabel.Text := FEngineDisplayName;
+
+  if Assigned(FDetailsLabel) then
+  begin
+    if FCurrentEngine <> '' then
+      FDetailsLabel.Text := 'Active Engine: ' + FCurrentEngine
+    else
+      FDetailsLabel.Text := 'Layout: ' + FCurrentLayout;
+  end;
+
+  if Assigned(FSwitchBtn) then
+  begin
+    if Pos('mozc', LowerCase(FCurrentEngine)) > 0 then
+      FSwitchBtn.Caption := 'Switch to English (US)'
+    else if FHasMozc or FIsIbusActive then
+      FSwitchBtn.Caption := 'Switch to Mozc (Japanese)'
+    else
+      FSwitchBtn.Caption := 'Switch Input Engine';
+  end;
+end;
+
+procedure TShellKeyboardApplet.ShowPopup();
+begin
+  if not Assigned(FPopupWindow) then
+    CreatePopupWindow();
+  UpdatePopupContent();
+  ApplyThemeStyle();
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.Show();
+    FPopupWindow.GrabPopupInput();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+    if Assigned(FButton) then
+      FButton.Toggled := True;
+  end;
+end;
+
+procedure TShellKeyboardApplet.HidePopup();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.UngrabInput();
+    FPopupWindow.Hide();
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
+end;
+
+procedure TShellKeyboardApplet.TogglePopup();
+begin
+  if IsPopupOpen() then
+    HidePopup()
+  else
+    ShowPopup();
+end;
+
+function TShellKeyboardApplet.IsPopupOpen(): Boolean;
+begin
+  Result := Assigned(FPopupWindow) and FPopupWindow.Visible;
+end;
+
+procedure TShellKeyboardApplet.HandleButtonClick(Sender: TFtButton);
+begin
+  TogglePopup();
+end;
+
+procedure TShellKeyboardApplet.HandleSwitchClick(Sender: TFtButton);
+begin
+  ToggleInputMethod();
+end;
+
+procedure TShellKeyboardApplet.HandlePreferencesClick(Sender: TFtButton);
+begin
+  HidePopup();
+  ExecShellCmdAsync('ibus-setup || configsama Keyboard');
+end;
+
+procedure TShellKeyboardApplet.HandleSettingsClick(Sender: TFtButton);
+begin
+  HidePopup();
+  ExecShellCmdAsync('configsama Keyboard || configsama');
+end;
+
+procedure TShellKeyboardApplet.SetBounds(AX, AY, AW, AH: Integer);
+begin
+  if Assigned(FButton) then
+    FButton.SetBounds(AX, AY, AW, AH);
+end;
+
+procedure TShellKeyboardApplet.Tick();
+var
+  nowTick: Int64;
+  curLay, curEng, curName: string;
+  curIbus, curMozc: Boolean;
+begin
+  if FMockMode then Exit;
+  nowTick := GetTickCount64();
+  if (nowTick - FLastCheckTick < 3000) or FQueryBusy then Exit;
+  FLastCheckTick := nowTick;
+  FQueryBusy := True;
+  try
+    if QueryKeyboard(curLay, curEng, curName, curIbus, curMozc) then
+    begin
+      if (curLay <> FCurrentLayout) or (curEng <> FCurrentEngine) or (curName <> FEngineDisplayName) or
+         (curIbus <> FIsIbusActive) or (curMozc <> FHasMozc) then
+      begin
+        FCurrentLayout := curLay;
+        FCurrentEngine := curEng;
+        FEngineDisplayName := curName;
+        FIsIbusActive := curIbus;
+        FHasMozc := curMozc;
+        UpdateUI();
+        if IsPopupOpen() then
+        begin
+          UpdatePopupContent();
+          if Assigned(FPlate) then
+            FPlate.Invalidate();
+        end;
+      end;
+    end;
+  finally
+    FQueryBusy := False;
+  end;
+end;
+
+// =============================================================================
+// TShellDisplayApplet Implementation
+// =============================================================================
+
+constructor TShellDisplayApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+begin
+  inherited Create();
+  FPanelWindow := AParentWindow;
+  FConnectedCount := 1;
+  FPrimaryName := 'eDP-1';
+  FPrimaryResolution := '1920x1080';
+  FSecondaryName := '';
+  FSecondaryResolution := '';
+  FMockMode := False;
+  FLastCheckTick := 0;
+  FQueryBusy := False;
+
+  if Assigned(FPanelWindow) then
+  begin
+    FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
+    FButton.IsToggle := True;
+    FButton.Flat := True;
+    FButton.CornerRadius := 6.0;
+    FButton.IconPosition := ftipOnly;
+    FButton.SetIconSize(18, 18);
+    FButton.OnClick := @HandleButtonClick;
+  end;
+
+  QueryDisplays(FConnectedCount, FPrimaryName, FPrimaryResolution, FSecondaryName, FSecondaryResolution);
+  UpdateUI();
+  ApplyThemeStyle();
+end;
+
+destructor TShellDisplayApplet.Destroy();
+begin
+  DestroyPopupWindow();
+  if Assigned(FButton) then
+  begin
+    FButton.Free();
+    FButton := nil;
+  end;
+  inherited Destroy();
+end;
+
+function TShellDisplayApplet.QueryDisplays(out ACount: Integer; out APriName, APriRes, ASecName, ASecRes: string): Boolean;
+var
+  xrandrOut: string;
+  lines, tokens: TStringList;
+  i: Integer;
+  lineStr, tok, resTok: string;
+  monIdx: Integer;
+  sr: TSearchRec;
+  drmPath, statStr: string;
+  pSlash1, pX, pSlash2, pDash: Integer;
+begin
+  ACount := 0;
+  APriName := '';
+  APriRes := '';
+  ASecName := '';
+  ASecRes := '';
+  Result := False;
+
+  if RunCommand('/usr/bin/xrandr', ['--listmonitors'], xrandrOut) then
+  begin
+    lines := TStringList.Create();
+    tokens := TStringList.Create();
+    try
+      lines.Text := xrandrOut;
+      monIdx := 0;
+      for i := 0 to lines.Count - 1 do
+      begin
+        lineStr := Trim(lines[i]);
+        if Pos('Monitors:', lineStr) = 1 then
+          Continue;
+
+        if (Length(lineStr) > 0) and (lineStr[1] in ['0'..'9']) then
+        begin
+          Inc(monIdx);
+          tokens.Clear();
+          tokens.Delimiter := ' ';
+          tokens.StrictDelimiter := False;
+          tokens.DelimitedText := lineStr;
+
+          if tokens.Count > 0 then
+            tok := tokens[tokens.Count - 1]
+          else
+            tok := 'Display' + IntToStr(monIdx);
+
+          resTok := '';
+          if tokens.Count >= 3 then
+          begin
+            resTok := tokens[2];
+            pSlash1 := Pos('/', resTok);
+            pX := Pos('x', resTok);
+            if (pSlash1 > 0) and (pX > pSlash1) then
+            begin
+              pSlash2 := PosEx('/', resTok, pX);
+              if pSlash2 > pX then
+                resTok := Copy(resTok, 1, pSlash1 - 1) + 'x' + Copy(resTok, pX + 1, pSlash2 - pX - 1);
+            end;
+          end;
+
+          if (monIdx = 1) or (Pos('*', lineStr) > 0) then
+          begin
+            APriName := tok;
+            if resTok <> '' then
+              APriRes := resTok
+            else
+              APriRes := 'Active';
+          end
+          else
+          begin
+            ASecName := tok;
+            if resTok <> '' then
+              ASecRes := resTok
+            else
+              ASecRes := 'Active';
+          end;
+        end;
+      end;
+      if monIdx > 0 then
+      begin
+        ACount := monIdx;
+        Result := True;
+        Exit;
+      end;
+    finally
+      tokens.Free();
+      lines.Free();
+    end;
+  end;
+
+  // Fallback to /sys/class/drm/card*-*
+  if FindFirst('/sys/class/drm/card*-*', faDirectory, sr) = 0 then
+  begin
+    repeat
+      if (sr.Name <> '.') and (sr.Name <> '..') then
+      begin
+        drmPath := '/sys/class/drm/' + sr.Name;
+        statStr := ReadSysfsFirstLine(drmPath + '/status');
+        if SameText(statStr, 'connected') then
+        begin
+          Inc(ACount);
+          pDash := Pos('-', sr.Name);
+          if pDash > 0 then
+            tok := Copy(sr.Name, pDash + 1, Length(sr.Name))
+          else
+            tok := sr.Name;
+
+          if ACount = 1 then
+          begin
+            APriName := tok;
+            APriRes := 'Active';
+          end
+          else
+          begin
+            ASecName := tok;
+            ASecRes := 'Active';
+          end;
+        end;
+      end;
+    until FindNext(sr) <> 0;
+    FindClose(sr);
+    if ACount > 0 then
+      Result := True;
+  end;
+end;
+
+procedure TShellDisplayApplet.SetDisplayState(ACount: Integer; const APriName, APriRes: string; const ASecName: string; const ASecRes: string);
+begin
+  FConnectedCount := ACount;
+  FPrimaryName := APriName;
+  FPrimaryResolution := APriRes;
+  FSecondaryName := ASecName;
+  FSecondaryResolution := ASecRes;
+  UpdateUI();
+  if IsPopupOpen() then
+  begin
+    UpdatePopupContent();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellDisplayApplet.ExtendDisplays();
+begin
+  if (FSecondaryName <> '') and (FPrimaryName <> '') then
+    ExecShellCmdAsync('xrandr --output ' + FSecondaryName + ' --auto --right-of ' + FPrimaryName);
+end;
+
+procedure TShellDisplayApplet.MirrorDisplays();
+begin
+  if (FSecondaryName <> '') and (FPrimaryName <> '') then
+    ExecShellCmdAsync('xrandr --output ' + FSecondaryName + ' --auto --same-as ' + FPrimaryName);
+end;
+
+procedure TShellDisplayApplet.UpdateUI();
+begin
+  if Assigned(FButton) then
+  begin
+    FButton.Caption := '';
+    FButton.IconPosition := ftipOnly;
+    FButton.SetIconSize(18, 18);
+    FButton.SetIconSVG(GetDisplayIconSVG(FConnectedCount, IsDarkTheme()));
+    if FConnectedCount > 1 then
+      FButton.Hint := 'Displays: ' + IntToStr(FConnectedCount) + ' connected (' + FPrimaryName + ', ' + FSecondaryName + ')'
+    else
+      FButton.Hint := 'Display: ' + FPrimaryName + ' (' + FPrimaryResolution + ')';
+  end;
+end;
+
+procedure TShellDisplayApplet.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  isDark := IsDarkTheme();
+  UpdateUI();
+
+  if Assigned(FTitleLabel) then
+  begin
+    if isDark then
+      FTitleLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FTitleLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FSummaryLabel) then
+  begin
+    if isDark then
+      FSummaryLabel.SetColor(0.85, 0.88, 0.95)
+    else
+      FSummaryLabel.SetColor(0.12, 0.16, 0.23);
+  end;
+
+  if Assigned(FPrimaryLabel) then
+  begin
+    if isDark then
+      FPrimaryLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FPrimaryLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FSecondaryLabel) then
+  begin
+    if isDark then
+      FSecondaryLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FSecondaryLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+  if Assigned(FExtendBtn) then
+    FExtendBtn.Invalidate();
+  if Assigned(FMirrorBtn) then
+    FMirrorBtn.Invalidate();
+  if Assigned(FSettingsBtn) then
+    FSettingsBtn.Invalidate();
+  if Assigned(FPopupWindow) then
+    FPopupWindow.Invalidate();
+end;
+
+procedure TShellDisplayApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  isDark: Boolean;
+begin
+  if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+  isDark := IsDarkTheme();
+  if isDark then
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 24 / 255, 25 / 255, 38 / 255, 0.98);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 69 / 255, 71 / 255, 90 / 255, 0.80);
+  end
+  else
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+  end;
+end;
+
+procedure TShellDisplayApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+end;
+
+procedure TShellDisplayApplet.CreatePopupWindow();
+var
+  popX, popY, popW, popH: Integer;
+begin
+  if Assigned(FPopupWindow) then Exit;
+
+  popW := 250;
+  if FConnectedCount > 1 then
+    popH := 160
+  else
+    popH := 115;
+
+  if Assigned(FButton) and Assigned(FPanelWindow) then
+  begin
+    popX := FButton.X + (FButton.Width - popW) div 2;
+    popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
+  end
+  else
+  begin
+    popX := 100;
+    popY := 100;
+  end;
+
+  FPopupWindow := TFtWindow.Create(popW, popH, 'shellsama-display-popup');
+  FPopupWindow.WindowType := ftwtPopupMenu;
+  FPopupWindow.Borderless := True;
+  FPopupWindow.SkipTaskbar := True;
+  FPopupWindow.SetPosition(popX, popY);
+  FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
+
+  FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
+  FPlate.OnPaint := @HandlePlatePaint;
+
+  FTitleLabel := TFtLabel.Create(FPopupWindow, 16, 10, popW - 32, 18, 'Displays & Monitors');
+  FTitleLabel.Alignment := ftaLeft;
+
+  FSummaryLabel := TFtLabel.Create(FPopupWindow, 16, 32, popW - 32, 16, '');
+  FSummaryLabel.Alignment := ftaLeft;
+
+  FPrimaryLabel := TFtLabel.Create(FPopupWindow, 16, 50, popW - 32, 16, '');
+  FPrimaryLabel.Alignment := ftaLeft;
+
+  FSecondaryLabel := TFtLabel.Create(FPopupWindow, 16, 68, popW - 32, 16, '');
+  FSecondaryLabel.Alignment := ftaLeft;
+
+  FExtendBtn := TFtButton.Create(FPopupWindow, 16, 92, (popW - 38) div 2, 24, 'Extend');
+  FExtendBtn.Flat := True;
+  FExtendBtn.CornerRadius := 4.0;
+  FExtendBtn.OnClick := @HandleExtendClick;
+
+  FMirrorBtn := TFtButton.Create(FPopupWindow, 16 + (popW - 38) div 2 + 6, 92, (popW - 38) div 2, 24, 'Mirror');
+  FMirrorBtn.Flat := True;
+  FMirrorBtn.CornerRadius := 4.0;
+  FMirrorBtn.OnClick := @HandleMirrorClick;
+
+  FSettingsBtn := TFtButton.Create(FPopupWindow, 16, 124, popW - 32, 24, 'Display Settings...');
+  FSettingsBtn.Flat := True;
+  FSettingsBtn.CornerRadius := 4.0;
+  FSettingsBtn.OnClick := @HandleSettingsClick;
+
+  UpdatePopupContent();
+  ApplyThemeStyle();
+end;
+
+procedure TShellDisplayApplet.DestroyPopupWindow();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPlate := nil;
+    FTitleLabel := nil;
+    FSummaryLabel := nil;
+    FPrimaryLabel := nil;
+    FSecondaryLabel := nil;
+    FExtendBtn := nil;
+    FMirrorBtn := nil;
+    FSettingsBtn := nil;
+    FPopupWindow.Free();
+    FPopupWindow := nil;
+  end;
+end;
+
+procedure TShellDisplayApplet.UpdatePopupContent();
+var
+  hasMulti: Boolean;
+begin
+  hasMulti := (FConnectedCount > 1);
+
+  if Assigned(FSummaryLabel) then
+  begin
+    if FConnectedCount = 1 then
+      FSummaryLabel.Text := '1 Display connected'
+    else if FConnectedCount > 1 then
+      FSummaryLabel.Text := IntToStr(FConnectedCount) + ' Displays connected'
+    else
+      FSummaryLabel.Text := 'No displays detected';
+  end;
+
+  if Assigned(FPrimaryLabel) then
+  begin
+    if FPrimaryName <> '' then
+      FPrimaryLabel.Text := 'Primary: ' + FPrimaryName + ' (' + FPrimaryResolution + ')'
+    else
+      FPrimaryLabel.Text := 'Primary: None';
+  end;
+
+  if Assigned(FSecondaryLabel) then
+  begin
+    if hasMulti and (FSecondaryName <> '') then
+    begin
+      FSecondaryLabel.Visible := True;
+      FSecondaryLabel.Text := 'External: ' + FSecondaryName + ' (' + FSecondaryResolution + ')';
+    end
+    else
+      FSecondaryLabel.Visible := False;
+  end;
+
+  if Assigned(FExtendBtn) then
+    FExtendBtn.Visible := hasMulti;
+  if Assigned(FMirrorBtn) then
+    FMirrorBtn.Visible := hasMulti;
+
+  if Assigned(FSettingsBtn) then
+  begin
+    if hasMulti then
+      FSettingsBtn.SetBounds(16, 124, 250 - 32, 24)
+    else
+      FSettingsBtn.SetBounds(16, 76, 250 - 32, 24);
+  end;
+end;
+
+procedure TShellDisplayApplet.ShowPopup();
+begin
+  if not Assigned(FPopupWindow) then
+    CreatePopupWindow();
+  UpdatePopupContent();
+  ApplyThemeStyle();
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.Show();
+    FPopupWindow.GrabPopupInput();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+    if Assigned(FButton) then
+      FButton.Toggled := True;
+  end;
+end;
+
+procedure TShellDisplayApplet.HidePopup();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.UngrabInput();
+    FPopupWindow.Hide();
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
+end;
+
+procedure TShellDisplayApplet.TogglePopup();
+begin
+  if IsPopupOpen() then
+    HidePopup()
+  else
+    ShowPopup();
+end;
+
+function TShellDisplayApplet.IsPopupOpen(): Boolean;
+begin
+  Result := Assigned(FPopupWindow) and FPopupWindow.Visible;
+end;
+
+procedure TShellDisplayApplet.HandleButtonClick(Sender: TFtButton);
+begin
+  TogglePopup();
+end;
+
+procedure TShellDisplayApplet.HandleExtendClick(Sender: TFtButton);
+begin
+  ExtendDisplays();
+end;
+
+procedure TShellDisplayApplet.HandleMirrorClick(Sender: TFtButton);
+begin
+  MirrorDisplays();
+end;
+
+procedure TShellDisplayApplet.HandleSettingsClick(Sender: TFtButton);
+begin
+  HidePopup();
+  ExecShellCmdAsync('configsama Displays || configsama');
+end;
+
+procedure TShellDisplayApplet.SetBounds(AX, AY, AW, AH: Integer);
+begin
+  if Assigned(FButton) then
+    FButton.SetBounds(AX, AY, AW, AH);
+end;
+
+procedure TShellDisplayApplet.Tick();
+var
+  nowTick: Int64;
+  curCnt: Integer;
+  curPri, curPriRes, curSec, curSecRes: string;
+begin
+  if FMockMode then Exit;
+  nowTick := GetTickCount64();
+  if (nowTick - FLastCheckTick < 3000) or FQueryBusy then Exit;
+  FLastCheckTick := nowTick;
+  FQueryBusy := True;
+  try
+    if QueryDisplays(curCnt, curPri, curPriRes, curSec, curSecRes) then
+    begin
+      if (curCnt <> FConnectedCount) or (curPri <> FPrimaryName) or (curPriRes <> FPrimaryResolution) or
+         (curSec <> FSecondaryName) or (curSecRes <> FSecondaryResolution) then
+      begin
+        FConnectedCount := curCnt;
+        FPrimaryName := curPri;
+        FPrimaryResolution := curPriRes;
+        FSecondaryName := curSec;
+        FSecondaryResolution := curSecRes;
         UpdateUI();
         if IsPopupOpen() then
         begin

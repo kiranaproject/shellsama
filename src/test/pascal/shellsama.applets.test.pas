@@ -20,6 +20,8 @@ type
     FWiredApplet     : TShellWiredApplet;
     FLanApplet       : TShellLanApplet;
     FBluetoothApplet : TShellBluetoothApplet;
+    FKeyboardApplet  : TShellKeyboardApplet;
+    FDisplayApplet   : TShellDisplayApplet;
   protected
     procedure SetUp(); override;
     procedure TearDown(); override;
@@ -38,6 +40,10 @@ type
     procedure TestLanPopupLifecycle();
     procedure TestBluetoothAppletCreationAndGlyphs();
     procedure TestBluetoothPopupLifecycle();
+    procedure TestKeyboardAppletCreationAndGlyphs();
+    procedure TestKeyboardPopupLifecycle();
+    procedure TestDisplayAppletCreationAndGlyphs();
+    procedure TestDisplayPopupLifecycle();
     procedure TestAppletsDarkModeTheme();
   end;
 
@@ -66,10 +72,24 @@ begin
   FWiredApplet := TShellWiredApplet.Create(FTestWin, 220, 10, 32, 28);
   FLanApplet := TShellLanApplet.Create(FTestWin, 260, 10, 32, 28);
   FBluetoothApplet := TShellBluetoothApplet.Create(FTestWin, 300, 10, 32, 28);
+  FKeyboardApplet := TShellKeyboardApplet.Create(FTestWin, 340, 10, 32, 28);
+  FDisplayApplet := TShellDisplayApplet.Create(FTestWin, 380, 10, 32, 28);
 end;
 
 procedure TAppletsTest.TearDown();
 begin
+  if Assigned(FDisplayApplet) then
+  begin
+    FDisplayApplet.Free();
+    FDisplayApplet := nil;
+  end;
+
+  if Assigned(FKeyboardApplet) then
+  begin
+    FKeyboardApplet.Free();
+    FKeyboardApplet := nil;
+  end;
+
   if Assigned(FBluetoothApplet) then
   begin
     FBluetoothApplet.Free();
@@ -424,6 +444,146 @@ begin
   AssertFalse('Popup closed after second TogglePopup', FBluetoothApplet.IsPopupOpen());
 end;
 
+procedure TAppletsTest.TestKeyboardAppletCreationAndGlyphs();
+var
+  svgStr: string;
+begin
+  AssertNotNull('Keyboard applet created', FKeyboardApplet);
+  AssertNotNull('Keyboard applet button created', FKeyboardApplet.Button);
+  AssertFalse('Popup should not be open initially', FKeyboardApplet.IsPopupOpen());
+
+  FKeyboardApplet.MockMode := True;
+  FKeyboardApplet.SetKeyboardState('US', 'xkb:us::eng', 'English (US)', True, True);
+  AssertEquals('Layout should be US', 'US', FKeyboardApplet.CurrentLayout);
+  AssertEquals('Engine should be xkb:us::eng', 'xkb:us::eng', FKeyboardApplet.CurrentEngine);
+  AssertEquals('Display name matches', 'English (US)', FKeyboardApplet.EngineDisplayName);
+  AssertTrue('HasMozc should be True', FKeyboardApplet.HasMozc);
+
+  // Toggle to Mozc
+  FKeyboardApplet.ToggleInputMethod();
+  AssertEquals('Engine switches to mozc-jp', 'mozc-jp', FKeyboardApplet.CurrentEngine);
+  AssertEquals('Layout switches to JA', 'JA', FKeyboardApplet.CurrentLayout);
+  AssertEquals('Display name is Mozc', 'Mozc (Japanese)', FKeyboardApplet.EngineDisplayName);
+
+  // Toggle back to US
+  FKeyboardApplet.ToggleInputMethod();
+  AssertEquals('Engine switches back to US', 'xkb:us::eng', FKeyboardApplet.CurrentEngine);
+  AssertEquals('Layout switches back to US', 'US', FKeyboardApplet.CurrentLayout);
+
+  // SVG glyph check
+  svgStr := GetKeyboardIconSVG('US', False);
+  AssertTrue('Light SVG contains <svg tag', Pos('<svg', svgStr) > 0);
+  AssertTrue('Light SVG contains stroke', Pos('stroke=', svgStr) > 0);
+
+  svgStr := GetKeyboardIconSVG('JA', True);
+  AssertTrue('Dark SVG contains <svg tag', Pos('<svg', svgStr) > 0);
+end;
+
+procedure TAppletsTest.TestKeyboardPopupLifecycle();
+begin
+  FKeyboardApplet.MockMode := True;
+  FKeyboardApplet.SetKeyboardState('US', 'xkb:us::eng', 'English (US)', True, True);
+  AssertFalse('Popup closed initially', FKeyboardApplet.IsPopupOpen());
+
+  // 1. Open popup
+  FKeyboardApplet.ShowPopup();
+  AssertTrue('Popup should be open', FKeyboardApplet.IsPopupOpen());
+  AssertNotNull('Popup window created', FKeyboardApplet.PopupWindow);
+  AssertNotNull('Plate created', FKeyboardApplet.Plate);
+  AssertNotNull('Title label created', FKeyboardApplet.TitleLabel);
+  AssertNotNull('Status label created', FKeyboardApplet.StatusLabel);
+  AssertNotNull('Details label created', FKeyboardApplet.DetailsLabel);
+  AssertNotNull('Switch button created', FKeyboardApplet.SwitchButton);
+  AssertNotNull('Preferences button created', FKeyboardApplet.PreferencesButton);
+  AssertNotNull('Settings button created', FKeyboardApplet.SettingsButton);
+
+  AssertEquals('Status label shows display name', 'English (US)', FKeyboardApplet.StatusLabel.Text);
+  AssertTrue('Switch button text mentions Mozc', Pos('Mozc', FKeyboardApplet.SwitchButton.Caption) > 0);
+
+  // 2. Hide popup
+  FKeyboardApplet.HidePopup();
+  AssertFalse('Popup should be closed', FKeyboardApplet.IsPopupOpen());
+
+  // 3. Toggle popup
+  FKeyboardApplet.TogglePopup();
+  AssertTrue('Popup toggled open', FKeyboardApplet.IsPopupOpen());
+  FKeyboardApplet.TogglePopup();
+  AssertFalse('Popup toggled closed', FKeyboardApplet.IsPopupOpen());
+
+  // 4. SetBounds
+  FKeyboardApplet.SetBounds(15, 12, 38, 30);
+  AssertEquals('Button X updated', 15, FKeyboardApplet.Button.X);
+  AssertEquals('Button Y updated', 12, FKeyboardApplet.Button.Y);
+end;
+
+procedure TAppletsTest.TestDisplayAppletCreationAndGlyphs();
+var
+  svgSingle, svgDual: string;
+begin
+  AssertNotNull('Display applet created', FDisplayApplet);
+  AssertNotNull('Display applet button created', FDisplayApplet.Button);
+  AssertFalse('Popup should not be open initially', FDisplayApplet.IsPopupOpen());
+
+  FDisplayApplet.MockMode := True;
+  FDisplayApplet.SetDisplayState(1, 'eDP-1', '1920x1080');
+  AssertEquals('Connected count is 1', 1, FDisplayApplet.ConnectedCount);
+  AssertEquals('Primary display is eDP-1', 'eDP-1', FDisplayApplet.PrimaryName);
+  AssertEquals('Primary resolution matches', '1920x1080', FDisplayApplet.PrimaryResolution);
+
+  // Switch to dual monitor state
+  FDisplayApplet.SetDisplayState(2, 'eDP-1', '1920x1080', 'HDMI-1', '2560x1440');
+  AssertEquals('Connected count is 2', 2, FDisplayApplet.ConnectedCount);
+  AssertEquals('Secondary display is HDMI-1', 'HDMI-1', FDisplayApplet.SecondaryName);
+  AssertEquals('Secondary resolution matches', '2560x1440', FDisplayApplet.SecondaryResolution);
+
+  // SVG glyph check
+  svgSingle := GetDisplayIconSVG(1, False);
+  AssertTrue('Single display SVG contains <svg tag', Pos('<svg', svgSingle) > 0);
+
+  svgDual := GetDisplayIconSVG(2, True);
+  AssertTrue('Dual display SVG contains <svg tag', Pos('<svg', svgDual) > 0);
+  AssertFalse('Single and dual monitor SVGs are visually distinct', svgSingle = svgDual);
+end;
+
+procedure TAppletsTest.TestDisplayPopupLifecycle();
+begin
+  FDisplayApplet.MockMode := True;
+  FDisplayApplet.SetDisplayState(2, 'eDP-1', '1920x1080', 'HDMI-1', '1920x1080');
+  AssertFalse('Popup closed initially', FDisplayApplet.IsPopupOpen());
+
+  // 1. Open popup
+  FDisplayApplet.ShowPopup();
+  AssertTrue('Popup should be open', FDisplayApplet.IsPopupOpen());
+  AssertNotNull('Popup window created', FDisplayApplet.PopupWindow);
+  AssertNotNull('Plate created', FDisplayApplet.Plate);
+  AssertNotNull('Title label created', FDisplayApplet.TitleLabel);
+  AssertNotNull('Summary label created', FDisplayApplet.SummaryLabel);
+  AssertNotNull('Primary label created', FDisplayApplet.PrimaryLabel);
+  AssertNotNull('Secondary label created', FDisplayApplet.SecondaryLabel);
+  AssertNotNull('Extend button created', FDisplayApplet.ExtendButton);
+  AssertNotNull('Mirror button created', FDisplayApplet.MirrorButton);
+  AssertNotNull('Settings button created', FDisplayApplet.SettingsButton);
+
+  AssertEquals('Summary label shows 2 displays', '2 Displays connected', FDisplayApplet.SummaryLabel.Text);
+  AssertTrue('Secondary label visible in dual display mode', FDisplayApplet.SecondaryLabel.Visible);
+  AssertTrue('Extend button visible in dual display mode', FDisplayApplet.ExtendButton.Visible);
+
+  // 2. Hide popup
+  FDisplayApplet.HidePopup();
+  AssertFalse('Popup should be closed', FDisplayApplet.IsPopupOpen());
+
+  // 3. Toggle popup
+  FDisplayApplet.TogglePopup();
+  AssertTrue('Popup toggled open', FDisplayApplet.IsPopupOpen());
+  FDisplayApplet.TogglePopup();
+  AssertFalse('Popup toggled closed', FDisplayApplet.IsPopupOpen());
+
+  // 4. SetBounds
+  FDisplayApplet.SetBounds(25, 14, 40, 32);
+  AssertEquals('Button X updated', 25, FDisplayApplet.Button.X);
+  AssertEquals('Button Y updated', 14, FDisplayApplet.Button.Y);
+end;
+
 procedure TAppletsTest.TestAppletsDarkModeTheme();
 var
   savedDark: Boolean;
@@ -456,6 +616,14 @@ begin
     AssertTrue('Bluetooth popup open in dark mode', FBluetoothApplet.IsPopupOpen());
     AssertNotNull('Bluetooth popup window exists in dark mode', FBluetoothApplet.PopupWindow);
 
+    FKeyboardApplet.ShowPopup();
+    AssertTrue('Keyboard popup open in dark mode', FKeyboardApplet.IsPopupOpen());
+    AssertNotNull('Keyboard popup window exists in dark mode', FKeyboardApplet.PopupWindow);
+
+    FDisplayApplet.ShowPopup();
+    AssertTrue('Display popup open in dark mode', FDisplayApplet.IsPopupOpen());
+    AssertNotNull('Display popup window exists in dark mode', FDisplayApplet.PopupWindow);
+
     // Apply theme styling updates popups without error
     FVolumeApplet.ApplyThemeStyle();
     FClockApplet.ApplyThemeStyle();
@@ -463,12 +631,16 @@ begin
     FWiredApplet.ApplyThemeStyle();
     FLanApplet.ApplyThemeStyle();
     FBluetoothApplet.ApplyThemeStyle();
+    FKeyboardApplet.ApplyThemeStyle();
+    FDisplayApplet.ApplyThemeStyle();
     AssertTrue('Volume popup remains open after ApplyThemeStyle', FVolumeApplet.IsPopupOpen());
     AssertTrue('Clock popup remains open after ApplyThemeStyle', FClockApplet.IsPopupOpen());
     AssertTrue('Battery popup remains open after ApplyThemeStyle', FBatteryApplet.IsPopupOpen());
     AssertTrue('Wired popup remains open after ApplyThemeStyle', FWiredApplet.IsPopupOpen());
     AssertTrue('LAN popup remains open after ApplyThemeStyle', FLanApplet.IsPopupOpen());
     AssertTrue('Bluetooth popup remains open after ApplyThemeStyle', FBluetoothApplet.IsPopupOpen());
+    AssertTrue('Keyboard popup remains open after ApplyThemeStyle', FKeyboardApplet.IsPopupOpen());
+    AssertTrue('Display popup remains open after ApplyThemeStyle', FDisplayApplet.IsPopupOpen());
 
     // Switch to light mode and apply theme style
     FtApp().DarkMode := False;
@@ -478,12 +650,16 @@ begin
     FWiredApplet.ApplyThemeStyle();
     FLanApplet.ApplyThemeStyle();
     FBluetoothApplet.ApplyThemeStyle();
+    FKeyboardApplet.ApplyThemeStyle();
+    FDisplayApplet.ApplyThemeStyle();
     AssertTrue('Volume popup remains open after switching to light mode', FVolumeApplet.IsPopupOpen());
     AssertTrue('Clock popup remains open after switching to light mode', FClockApplet.IsPopupOpen());
     AssertTrue('Battery popup remains open after switching to light mode', FBatteryApplet.IsPopupOpen());
     AssertTrue('Wired popup remains open after switching to light mode', FWiredApplet.IsPopupOpen());
     AssertTrue('LAN popup remains open after switching to light mode', FLanApplet.IsPopupOpen());
     AssertTrue('Bluetooth popup remains open after switching to light mode', FBluetoothApplet.IsPopupOpen());
+    AssertTrue('Keyboard popup remains open after switching to light mode', FKeyboardApplet.IsPopupOpen());
+    AssertTrue('Display popup remains open after switching to light mode', FDisplayApplet.IsPopupOpen());
 
     // Hide popups
     FVolumeApplet.HidePopup();
@@ -492,12 +668,16 @@ begin
     FWiredApplet.HidePopup();
     FLanApplet.HidePopup();
     FBluetoothApplet.HidePopup();
+    FKeyboardApplet.HidePopup();
+    FDisplayApplet.HidePopup();
     AssertFalse('Volume popup closed', FVolumeApplet.IsPopupOpen());
     AssertFalse('Clock popup closed', FClockApplet.IsPopupOpen());
     AssertFalse('Battery popup closed', FBatteryApplet.IsPopupOpen());
     AssertFalse('Wired popup closed', FWiredApplet.IsPopupOpen());
     AssertFalse('LAN popup closed', FLanApplet.IsPopupOpen());
     AssertFalse('Bluetooth popup closed', FBluetoothApplet.IsPopupOpen());
+    AssertFalse('Keyboard popup closed', FKeyboardApplet.IsPopupOpen());
+    AssertFalse('Display popup closed', FDisplayApplet.IsPopupOpen());
   finally
     FtApp().DarkMode := savedDark;
   end;
