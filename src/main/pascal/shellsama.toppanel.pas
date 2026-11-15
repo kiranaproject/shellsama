@@ -170,16 +170,14 @@ const
 
   SVG_DESKTOP_ICON_LIGHT =
     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_PANEL_ICON_COLOR_LIGHT + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>' +
-    '<line x1="8" y1="21" x2="16" y2="21"/>' +
-    '<line x1="12" y1="17" x2="12" y2="21"/>' +
+    '<rect x="3" y="3" width="18" height="18" rx="2.5"/>' +
+    '<line x1="8" y1="16.5" x2="16" y2="16.5"/>' +
     '</svg>';
 
   SVG_DESKTOP_ICON_DARK =
     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + SVG_PANEL_ICON_COLOR_DARK + '" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>' +
-    '<line x1="8" y1="21" x2="16" y2="21"/>' +
-    '<line x1="12" y1="17" x2="12" y2="21"/>' +
+    '<rect x="3" y="3" width="18" height="18" rx="2.5"/>' +
+    '<line x1="8" y1="16.5" x2="16" y2="16.5"/>' +
     '</svg>';
 
   SVG_DESKTOP_ICON = SVG_DESKTOP_ICON_LIGHT;
