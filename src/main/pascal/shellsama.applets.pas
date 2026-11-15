@@ -7,7 +7,7 @@ unit ShellSama.Applets;
 interface
 
 uses
-  Classes, SysUtils, Math, Process, DateUtils,
+  Classes, SysUtils, Math, Process, DateUtils, StrUtils,
   ftpas.api, ftpas.types, ftpas, ftpas.controls, ftpas.menus,
   ftpas.canvas, ftpas.creative, ftpas.font,
   ShellSama.Settings;
@@ -148,8 +148,250 @@ type
     property Menu: TFtPopupMenu read FMenu;
   end;
 
+  { TShellBatteryApplet — Interactive Battery & Power Status Applet }
+  TShellBatteryApplet = class
+  private
+    FPanelWindow      : TFtWindow;
+    FButton           : TFtButton;
+    FPopupWindow      : TFtWindow;
+    FPlate            : TFtDrawingArea;
+    FStatusLabel      : TFtLabel;
+    FPercentageLabel  : TFtLabel;
+    FSettingsBtn      : TFtButton;
+
+    FCurPercentage    : Integer;
+    FIsCharging       : Boolean;
+    FIsBatteryPresent : Boolean;
+    FMockMode         : Boolean;
+    FLastCheckTick    : Int64;
+    FQueryBusy        : Boolean;
+    FOnDismiss        : TNotifyEvent;
+
+    procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandleSettingsClick(Sender: TFtButton);
+    procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandlePopupWindowDismiss(Sender: TFtWindow);
+
+    procedure CreatePopupWindow();
+    procedure DestroyPopupWindow();
+    procedure UpdatePopupContent();
+  public
+    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+    destructor Destroy(); override;
+
+    function QueryBattery(out APercent: Integer; out ACharging: Boolean; out APresent: Boolean): Boolean;
+    procedure SetBatteryState(APercent: Integer; ACharging: Boolean; APresent: Boolean);
+
+    procedure UpdateUI();
+    procedure ApplyThemeStyle();
+    procedure ShowPopup();
+    procedure HidePopup();
+    procedure TogglePopup();
+    function IsPopupOpen(): Boolean;
+
+    procedure Tick();
+    procedure SetBounds(AX, AY, AW, AH: Integer);
+
+    property Button: TFtButton read FButton;
+    property CurrentPercentage: Integer read FCurPercentage;
+    property IsCharging: Boolean read FIsCharging;
+    property IsBatteryPresent: Boolean read FIsBatteryPresent;
+    property MockMode: Boolean read FMockMode write FMockMode;
+    property PopupWindow: TFtWindow read FPopupWindow;
+    property Plate: TFtDrawingArea read FPlate;
+    property StatusLabel: TFtLabel read FStatusLabel;
+    property PercentageLabel: TFtLabel read FPercentageLabel;
+    property SettingsButton: TFtButton read FSettingsBtn;
+    property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
+  end;
+
+  { TShellWiredApplet — Ethernet / Wired Network Status Applet }
+  TShellWiredApplet = class
+  private
+    FPanelWindow   : TFtWindow;
+    FButton        : TFtButton;
+    FPopupWindow   : TFtWindow;
+    FPlate         : TFtDrawingArea;
+    FStatusLabel   : TFtLabel;
+    FDetailsLabel  : TFtLabel;
+    FSettingsBtn   : TFtButton;
+
+    FIsConnected   : Boolean;
+    FInterfaceName : string;
+    FIpAddress     : string;
+    FMockMode      : Boolean;
+    FLastCheckTick : Int64;
+    FQueryBusy     : Boolean;
+    FOnDismiss     : TNotifyEvent;
+
+    procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandleSettingsClick(Sender: TFtButton);
+    procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandlePopupWindowDismiss(Sender: TFtWindow);
+
+    procedure CreatePopupWindow();
+    procedure DestroyPopupWindow();
+    procedure UpdatePopupContent();
+  public
+    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+    destructor Destroy(); override;
+
+    function QueryWired(out AConnected: Boolean; out AInterfaceName: string; out AIpAddress: string): Boolean;
+    procedure SetWiredState(AConnected: Boolean; const AInterfaceName: string; const AIpAddress: string);
+
+    procedure UpdateUI();
+    procedure ApplyThemeStyle();
+    procedure ShowPopup();
+    procedure HidePopup();
+    procedure TogglePopup();
+    function IsPopupOpen(): Boolean;
+
+    procedure Tick();
+    procedure SetBounds(AX, AY, AW, AH: Integer);
+
+    property Button: TFtButton read FButton;
+    property IsConnected: Boolean read FIsConnected;
+    property InterfaceName: string read FInterfaceName;
+    property IpAddress: string read FIpAddress;
+    property MockMode: Boolean read FMockMode write FMockMode;
+    property PopupWindow: TFtWindow read FPopupWindow;
+    property Plate: TFtDrawingArea read FPlate;
+    property StatusLabel: TFtLabel read FStatusLabel;
+    property DetailsLabel: TFtLabel read FDetailsLabel;
+    property SettingsButton: TFtButton read FSettingsBtn;
+    property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
+  end;
+
+  { TShellLanApplet — LAN / Wireless Network Status Applet }
+  TShellLanApplet = class
+  private
+    FPanelWindow   : TFtWindow;
+    FButton        : TFtButton;
+    FPopupWindow   : TFtWindow;
+    FPlate         : TFtDrawingArea;
+    FStatusLabel   : TFtLabel;
+    FDetailsLabel  : TFtLabel;
+    FToggleBtn     : TFtButton;
+    FSettingsBtn   : TFtButton;
+
+    FIsConnected   : Boolean;
+    FIsEnabled     : Boolean;
+    FSsid          : string;
+    FSignal        : Integer;
+    FMockMode      : Boolean;
+    FLastCheckTick : Int64;
+    FQueryBusy     : Boolean;
+    FOnDismiss     : TNotifyEvent;
+
+    procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandleToggleClick(Sender: TFtButton);
+    procedure HandleSettingsClick(Sender: TFtButton);
+    procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandlePopupWindowDismiss(Sender: TFtWindow);
+
+    procedure CreatePopupWindow();
+    procedure DestroyPopupWindow();
+    procedure UpdatePopupContent();
+  public
+    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+    destructor Destroy(); override;
+
+    function QueryLan(out AConnected: Boolean; out ASsid: string; out ASignal: Integer; out AEnabled: Boolean): Boolean;
+    procedure SetLanState(AConnected: Boolean; const ASsid: string; ASignal: Integer; AEnabled: Boolean);
+    procedure ToggleLan();
+
+    procedure UpdateUI();
+    procedure ApplyThemeStyle();
+    procedure ShowPopup();
+    procedure HidePopup();
+    procedure TogglePopup();
+    function IsPopupOpen(): Boolean;
+
+    procedure Tick();
+    procedure SetBounds(AX, AY, AW, AH: Integer);
+
+    property Button: TFtButton read FButton;
+    property IsConnected: Boolean read FIsConnected;
+    property IsEnabled: Boolean read FIsEnabled;
+    property Ssid: string read FSsid;
+    property Signal: Integer read FSignal;
+    property MockMode: Boolean read FMockMode write FMockMode;
+    property PopupWindow: TFtWindow read FPopupWindow;
+    property Plate: TFtDrawingArea read FPlate;
+    property StatusLabel: TFtLabel read FStatusLabel;
+    property DetailsLabel: TFtLabel read FDetailsLabel;
+    property ToggleButton: TFtButton read FToggleBtn;
+    property SettingsButton: TFtButton read FSettingsBtn;
+    property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
+  end;
+
+  { TShellBluetoothApplet — Bluetooth Status & Peripheral Applet }
+  TShellBluetoothApplet = class
+  private
+    FPanelWindow     : TFtWindow;
+    FButton          : TFtButton;
+    FPopupWindow     : TFtWindow;
+    FPlate           : TFtDrawingArea;
+    FStatusLabel     : TFtLabel;
+    FDetailsLabel    : TFtLabel;
+    FToggleBtn       : TFtButton;
+    FSettingsBtn     : TFtButton;
+
+    FIsEnabled       : Boolean;
+    FIsConnected     : Boolean;
+    FConnectedDevice : string;
+    FMockMode        : Boolean;
+    FLastCheckTick   : Int64;
+    FQueryBusy       : Boolean;
+    FOnDismiss       : TNotifyEvent;
+
+    procedure HandleButtonClick(Sender: TFtButton);
+    procedure HandleToggleClick(Sender: TFtButton);
+    procedure HandleSettingsClick(Sender: TFtButton);
+    procedure HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+    procedure HandlePopupWindowDismiss(Sender: TFtWindow);
+
+    procedure CreatePopupWindow();
+    procedure DestroyPopupWindow();
+    procedure UpdatePopupContent();
+  public
+    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+    destructor Destroy(); override;
+
+    function QueryBluetooth(out AEnabled: Boolean; out AConnected: Boolean; out AConnectedDevice: string): Boolean;
+    procedure SetBluetoothState(AEnabled: Boolean; AConnected: Boolean; const AConnectedDevice: string);
+    procedure ToggleBluetooth();
+
+    procedure UpdateUI();
+    procedure ApplyThemeStyle();
+    procedure ShowPopup();
+    procedure HidePopup();
+    procedure TogglePopup();
+    function IsPopupOpen(): Boolean;
+
+    procedure Tick();
+    procedure SetBounds(AX, AY, AW, AH: Integer);
+
+    property Button: TFtButton read FButton;
+    property IsEnabled: Boolean read FIsEnabled;
+    property IsConnected: Boolean read FIsConnected;
+    property ConnectedDevice: string read FConnectedDevice;
+    property MockMode: Boolean read FMockMode write FMockMode;
+    property PopupWindow: TFtWindow read FPopupWindow;
+    property Plate: TFtDrawingArea read FPlate;
+    property StatusLabel: TFtLabel read FStatusLabel;
+    property DetailsLabel: TFtLabel read FDetailsLabel;
+    property ToggleButton: TFtButton read FToggleBtn;
+    property SettingsButton: TFtButton read FSettingsBtn;
+    property OnDismiss: TNotifyEvent read FOnDismiss write FOnDismiss;
+  end;
+
 function GetPowerIconSVG(AIsDark: Boolean): string;
 function GetVolumeIconSVG(AKind: TVolumeIconKind; AIsDark: Boolean): string;
+function GetBatteryIconSVG(APercent: Integer; ACharging: Boolean; APresent: Boolean; AIsDark: Boolean): string;
+function GetWiredIconSVG(AConnected: Boolean; AIsDark: Boolean): string;
+function GetLanIconSVG(AConnected: Boolean; ASignal: Integer; AEnabled: Boolean; AIsDark: Boolean): string;
+function GetBluetoothIconSVG(AEnabled: Boolean; AConnected: Boolean; AIsDark: Boolean): string;
 
 implementation
 
@@ -253,6 +495,170 @@ const
     '<line x1="22" y1="9" x2="16" y2="15"/>' +
     '<line x1="16" y1="9" x2="22" y2="15"/>' +
     '</svg>';
+
+function ReadSysfsFirstLine(const APath: string): string;
+var
+  f: TextFile;
+  line: string;
+begin
+  Result := '';
+  if not FileExists(APath) then Exit;
+  try
+    AssignFile(f, APath);
+    Reset(f);
+    if not Eof(f) then
+    begin
+      ReadLn(f, line);
+      Result := Trim(line);
+    end;
+    CloseFile(f);
+  except
+    Result := '';
+  end;
+end;
+
+function GetBatteryIconSVG(APercent: Integer; ACharging: Boolean; APresent: Boolean; AIsDark: Boolean): string;
+var
+  c: string;
+  fillW: Integer;
+begin
+  if AIsDark then
+    c := SVG_ICON_COLOR_DARK
+  else
+    c := SVG_ICON_COLOR_LIGHT;
+
+  if not APresent then
+  begin
+    Result :=
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<rect x="2" y="6" width="16" height="12" rx="2" ry="2"/>' +
+      '<line x1="22" y1="11" x2="22" y2="13"/>' +
+      '<line x1="6" y1="12" x2="14" y2="12"/>' +
+      '</svg>';
+    Exit;
+  end;
+
+  if ACharging then
+  begin
+    Result :=
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<rect x="2" y="6" width="16" height="12" rx="2" ry="2"/>' +
+      '<line x1="22" y1="11" x2="22" y2="13"/>' +
+      '<polygon points="11 7 8 12 11 12 10 17 14 11 11 11" fill="' + c + '"/>' +
+      '</svg>';
+    Exit;
+  end;
+
+  if APercent < 15 then
+    fillW := 0
+  else if APercent < 40 then
+    fillW := 4
+  else if APercent < 75 then
+    fillW := 8
+  else
+    fillW := 12;
+
+  Result :=
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="2" y="6" width="16" height="12" rx="2" ry="2"/>' +
+    '<line x1="22" y1="11" x2="22" y2="13"/>';
+
+  if fillW > 0 then
+    Result := Result + '<rect x="4" y="8" width="' + IntToStr(fillW) + '" height="8" rx="1" fill="' + c + '" stroke="none"/>';
+
+  Result := Result + '</svg>';
+end;
+
+function GetWiredIconSVG(AConnected: Boolean; AIsDark: Boolean): string;
+var
+  c: string;
+begin
+  if AIsDark then
+    c := SVG_ICON_COLOR_DARK
+  else
+    c := SVG_ICON_COLOR_LIGHT;
+
+  Result :=
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="3" y="4" width="18" height="14" rx="2"/>' +
+    '<path d="M7 18v2h10v-2"/>' +
+    '<line x1="8" y1="8" x2="8" y2="12"/>' +
+    '<line x1="12" y1="8" x2="12" y2="12"/>' +
+    '<line x1="16" y1="8" x2="16" y2="12"/>';
+
+  if not AConnected then
+    Result := Result + '<line x1="2" y1="2" x2="22" y2="22" stroke-width="2.2"/>';
+
+  Result := Result + '</svg>';
+end;
+
+function GetLanIconSVG(AConnected: Boolean; ASignal: Integer; AEnabled: Boolean; AIsDark: Boolean): string;
+var
+  c: string;
+begin
+  if AIsDark then
+    c := SVG_ICON_COLOR_DARK
+  else
+    c := SVG_ICON_COLOR_LIGHT;
+
+  if (not AEnabled) or (not AConnected) then
+  begin
+    Result :=
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M12 20h.01"/>' +
+      '<path d="M8.5 16.5a5 5 0 0 1 7 0"/>' +
+      '<path d="M5 12.5a10 10 0 0 1 14 0"/>' +
+      '<line x1="2" y1="2" x2="22" y2="22" stroke-width="2.2"/>' +
+      '</svg>';
+    Exit;
+  end;
+
+  Result :=
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M12 20h.01"/>' +
+    '<path d="M8.5 16.5a5 5 0 0 1 7 0"/>';
+
+  if ASignal >= 35 then
+    Result := Result + '<path d="M5 12.5a10 10 0 0 1 14 0"/>';
+
+  if ASignal >= 70 then
+    Result := Result + '<path d="M1.5 8.5a15 15 0 0 1 21 0"/>';
+
+  Result := Result + '</svg>';
+end;
+
+function GetBluetoothIconSVG(AEnabled: Boolean; AConnected: Boolean; AIsDark: Boolean): string;
+var
+  c: string;
+begin
+  if AIsDark then
+    c := SVG_ICON_COLOR_DARK
+  else
+    c := SVG_ICON_COLOR_LIGHT;
+
+  if not AEnabled then
+  begin
+    Result :=
+      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M7 7l10 10-5 5V2l5 5L7 17"/>' +
+      '<line x1="2" y1="2" x2="22" y2="22" stroke-width="2.2"/>' +
+      '</svg>';
+    Exit;
+  end;
+
+  Result :=
+    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M7 7l10 10-5 5V2l5 5L7 17"/>';
+
+  if AConnected then
+  begin
+    Result := Result +
+      '<circle cx="4" cy="9" r="1.5" fill="' + c + '" stroke="none"/>' +
+      '<circle cx="4" cy="15" r="1.5" fill="' + c + '" stroke="none"/>';
+  end;
+
+  Result := Result + '</svg>';
+end;
 
 procedure ExecShellCmdAsync(const ACmd: string);
 var
@@ -1258,6 +1664,1542 @@ end;
 procedure TShellSessionApplet.HandleShutDown(Sender: TFtMenuItem);
 begin
   ExecShellCmdAsync('systemctl poweroff');
+end;
+
+// =============================================================================
+// TShellBatteryApplet Implementation
+// =============================================================================
+
+constructor TShellBatteryApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+begin
+  inherited Create();
+  FPanelWindow := AParentWindow;
+  FCurPercentage := 100;
+  FIsCharging := False;
+  FIsBatteryPresent := False;
+  FMockMode := False;
+  FLastCheckTick := 0;
+  FQueryBusy := False;
+  FOnDismiss := nil;
+
+  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
+  FButton.Flat := True;
+  FButton.IsToggle := True;
+  FButton.CornerRadius := 6.0;
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.OnClick := @HandleButtonClick;
+
+  QueryBattery(FCurPercentage, FIsCharging, FIsBatteryPresent);
+  UpdateUI();
+end;
+
+destructor TShellBatteryApplet.Destroy();
+begin
+  DestroyPopupWindow();
+  if Assigned(FButton) then
+  begin
+    FButton.Free();
+    FButton := nil;
+  end;
+  inherited Destroy();
+end;
+
+procedure TShellBatteryApplet.SetBounds(AX, AY, AW, AH: Integer);
+begin
+  if Assigned(FButton) then
+    FButton.SetBounds(AX, AY, AW, AH);
+end;
+
+function TShellBatteryApplet.QueryBattery(out APercent: Integer; out ACharging: Boolean; out APresent: Boolean): Boolean;
+var
+  batPath: string;
+  capStr, statStr: string;
+  info: TSearchRec;
+begin
+  APercent := 100;
+  ACharging := False;
+  APresent := False;
+  Result := False;
+
+  batPath := '';
+  if FindFirst('/sys/class/power_supply/BAT*', faAnyFile, info) = 0 then
+  begin
+    repeat
+      if (info.Name <> '.') and (info.Name <> '..') then
+      begin
+        batPath := '/sys/class/power_supply/' + info.Name;
+        Break;
+      end;
+    until FindNext(info) <> 0;
+    FindClose(info);
+  end;
+
+  if (batPath <> '') and DirectoryExists(batPath) then
+  begin
+    APresent := True;
+    capStr := ReadSysfsFirstLine(batPath + '/capacity');
+    statStr := ReadSysfsFirstLine(batPath + '/status');
+    APercent := EnsureRange(StrToIntDef(capStr, 100), 0, 100);
+    ACharging := SameText(statStr, 'Charging');
+    Result := True;
+    Exit;
+  end;
+
+  // Check if AC adapter is present (desktop system without battery)
+  if DirectoryExists('/sys/class/power_supply/ACAD') or
+     (FindFirst('/sys/class/power_supply/AC*', faAnyFile, info) = 0) then
+  begin
+    if info.Name <> '' then
+      FindClose(info);
+    APresent := False;
+    APercent := 100;
+    ACharging := False;
+    Result := True;
+  end;
+end;
+
+procedure TShellBatteryApplet.SetBatteryState(APercent: Integer; ACharging: Boolean; APresent: Boolean);
+begin
+  FMockMode := True;
+  FCurPercentage := EnsureRange(APercent, 0, 100);
+  FIsCharging := ACharging;
+  FIsBatteryPresent := APresent;
+  UpdateUI();
+  if IsPopupOpen() then
+  begin
+    UpdatePopupContent();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellBatteryApplet.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  UpdateUI();
+  isDark := IsDarkTheme();
+
+  if Assigned(FStatusLabel) then
+  begin
+    if isDark then
+      FStatusLabel.SetColor(0.85, 0.88, 0.95)
+    else
+      FStatusLabel.SetColor(0.12, 0.16, 0.23);
+  end;
+
+  if Assigned(FPercentageLabel) then
+  begin
+    if isDark then
+      FPercentageLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FPercentageLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+  if Assigned(FSettingsBtn) then
+    FSettingsBtn.Invalidate();
+  if Assigned(FPopupWindow) then
+    FPopupWindow.Invalidate();
+end;
+
+procedure TShellBatteryApplet.UpdateUI();
+var
+  isDark: Boolean;
+begin
+  if FButton = nil then Exit;
+
+  isDark := IsDarkTheme();
+  FButton.Caption := '';
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.SetIconSVG(GetBatteryIconSVG(FCurPercentage, FIsCharging, FIsBatteryPresent, isDark));
+end;
+
+procedure TShellBatteryApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  isDark: Boolean;
+  barX, barY, barW, barH: Integer;
+  fillW: Integer;
+begin
+  if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+
+  isDark := IsDarkTheme();
+  if isDark then
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 24 / 255, 25 / 255, 38 / 255, 0.98);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 69 / 255, 71 / 255, 90 / 255, 0.80);
+  end
+  else
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+  end;
+
+  barX := 16;
+  barY := 34;
+  barW := Sender.Width - 32;
+  barH := 10;
+
+  if isDark then
+    Canvas.DrawRoundedRect(barX, barY, barW, barH, 4.0, 49 / 255, 50 / 255, 68 / 255, 1.0)
+  else
+    Canvas.DrawRoundedRect(barX, barY, barW, barH, 4.0, 0.88, 0.91, 0.94, 1.0);
+
+  if FIsBatteryPresent and (FCurPercentage > 0) then
+  begin
+    fillW := Max(6, Round((FCurPercentage / 100.0) * barW));
+    if FIsCharging then
+      Canvas.DrawRoundedRect(barX, barY, fillW, barH, 4.0, 0.18, 0.80, 0.44, 1.0)
+    else if FCurPercentage <= 20 then
+      Canvas.DrawRoundedRect(barX, barY, fillW, barH, 4.0, 0.92, 0.26, 0.21, 1.0)
+    else
+      Canvas.DrawRoundedRect(barX, barY, fillW, barH, 4.0, 0.20, 0.60, 0.86, 1.0);
+  end;
+end;
+
+procedure TShellBatteryApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+end;
+
+procedure TShellBatteryApplet.HandleSettingsClick(Sender: TFtButton);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+  ExecShellCmdAsync('configsama Power || configsama');
+end;
+
+procedure TShellBatteryApplet.UpdatePopupContent();
+var
+  statText, pctText: string;
+begin
+  if not Assigned(FPopupWindow) then Exit;
+  if not FIsBatteryPresent then
+  begin
+    statText := 'Power Source: AC';
+    pctText := 'No battery detected';
+  end
+  else
+  begin
+    if FIsCharging then
+      statText := 'Battery: Charging (' + IntToStr(FCurPercentage) + '%)'
+    else if FCurPercentage >= 100 then
+      statText := 'Battery: Fully Charged'
+    else
+      statText := 'Battery: Discharging (' + IntToStr(FCurPercentage) + '%)';
+    pctText := IntToStr(FCurPercentage) + '% available';
+  end;
+
+  if Assigned(FStatusLabel) then
+    FStatusLabel.Text := statText;
+  if Assigned(FPercentageLabel) then
+    FPercentageLabel.Text := pctText;
+end;
+
+procedure TShellBatteryApplet.CreatePopupWindow();
+var
+  popX, popY, popW, popH: Integer;
+begin
+  if Assigned(FPopupWindow) then Exit;
+
+  popW := 220;
+  popH := 105;
+
+  if Assigned(FButton) and Assigned(FPanelWindow) then
+  begin
+    popX := FButton.X + (FButton.Width - popW) div 2;
+    popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
+  end
+  else
+  begin
+    popX := 100;
+    popY := 100;
+  end;
+
+  FPopupWindow := TFtWindow.Create(popW, popH, 'shellsama-battery-popup');
+  FPopupWindow.WindowType := ftwtPopupMenu;
+  FPopupWindow.Borderless := True;
+  FPopupWindow.SkipTaskbar := True;
+  FPopupWindow.SetPosition(popX, popY);
+  FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
+
+  FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
+  FPlate.OnPaint := @HandlePlatePaint;
+
+  FStatusLabel := TFtLabel.Create(FPopupWindow, 16, 10, popW - 32, 18, '');
+  FStatusLabel.Alignment := ftaLeft;
+
+  FPercentageLabel := TFtLabel.Create(FPopupWindow, 16, 48, popW - 32, 16, '');
+  FPercentageLabel.Alignment := ftaLeft;
+
+  FSettingsBtn := TFtButton.Create(FPopupWindow, 16, 70, popW - 32, 24, 'Power Settings...');
+  FSettingsBtn.Flat := True;
+  FSettingsBtn.CornerRadius := 4.0;
+  FSettingsBtn.OnClick := @HandleSettingsClick;
+
+  UpdatePopupContent();
+  ApplyThemeStyle();
+end;
+
+procedure TShellBatteryApplet.DestroyPopupWindow();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPlate := nil;
+    FStatusLabel := nil;
+    FPercentageLabel := nil;
+    FSettingsBtn := nil;
+    FPopupWindow.Free();
+    FPopupWindow := nil;
+  end;
+end;
+
+procedure TShellBatteryApplet.ShowPopup();
+begin
+  if not Assigned(FPopupWindow) then
+    CreatePopupWindow();
+  UpdatePopupContent();
+  ApplyThemeStyle();
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.Show();
+    FPopupWindow.GrabPopupInput();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+    if Assigned(FButton) then
+      FButton.Toggled := True;
+  end;
+end;
+
+procedure TShellBatteryApplet.HidePopup();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.UngrabInput();
+    FPopupWindow.Hide();
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
+end;
+
+procedure TShellBatteryApplet.TogglePopup();
+begin
+  if IsPopupOpen() then
+    HidePopup()
+  else
+    ShowPopup();
+end;
+
+function TShellBatteryApplet.IsPopupOpen(): Boolean;
+begin
+  Result := Assigned(FPopupWindow) and FPopupWindow.Visible;
+end;
+
+procedure TShellBatteryApplet.HandleButtonClick(Sender: TFtButton);
+begin
+  TogglePopup();
+end;
+
+procedure TShellBatteryApplet.Tick();
+var
+  nowTick: Int64;
+  curPct: Integer;
+  curChg, curPres: Boolean;
+begin
+  if FMockMode then Exit;
+  nowTick := GetTickCount64();
+  if (nowTick - FLastCheckTick < 3000) or FQueryBusy then Exit;
+  FLastCheckTick := nowTick;
+  FQueryBusy := True;
+  try
+    if QueryBattery(curPct, curChg, curPres) then
+    begin
+      if (curPct <> FCurPercentage) or (curChg <> FIsCharging) or (curPres <> FIsBatteryPresent) then
+      begin
+        FCurPercentage := curPct;
+        FIsCharging := curChg;
+        FIsBatteryPresent := curPres;
+        UpdateUI();
+        if IsPopupOpen() then
+        begin
+          UpdatePopupContent();
+          if Assigned(FPlate) then
+            FPlate.Invalidate();
+        end;
+      end;
+    end;
+  finally
+    FQueryBusy := False;
+  end;
+end;
+
+// =============================================================================
+// TShellWiredApplet Implementation
+// =============================================================================
+
+constructor TShellWiredApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+begin
+  inherited Create();
+  FPanelWindow := AParentWindow;
+  FIsConnected := False;
+  FInterfaceName := '';
+  FIpAddress := '';
+  FMockMode := False;
+  FLastCheckTick := 0;
+  FQueryBusy := False;
+  FOnDismiss := nil;
+
+  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
+  FButton.Flat := True;
+  FButton.IsToggle := True;
+  FButton.CornerRadius := 6.0;
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.OnClick := @HandleButtonClick;
+
+  QueryWired(FIsConnected, FInterfaceName, FIpAddress);
+  UpdateUI();
+end;
+
+destructor TShellWiredApplet.Destroy();
+begin
+  DestroyPopupWindow();
+  if Assigned(FButton) then
+  begin
+    FButton.Free();
+    FButton := nil;
+  end;
+  inherited Destroy();
+end;
+
+procedure TShellWiredApplet.SetBounds(AX, AY, AW, AH: Integer);
+begin
+  if Assigned(FButton) then
+    FButton.SetBounds(AX, AY, AW, AH);
+end;
+
+function TShellWiredApplet.QueryWired(out AConnected: Boolean; out AInterfaceName: string; out AIpAddress: string): Boolean;
+var
+  info: TSearchRec;
+  devName, devPath: string;
+  carrierStr, operStr: string;
+  nmOut: string;
+  lines: TStringList;
+  i, p: Integer;
+begin
+  AConnected := False;
+  AInterfaceName := '';
+  AIpAddress := '';
+  Result := False;
+
+  if FindFirst('/sys/class/net/*', faAnyFile, info) = 0 then
+  begin
+    repeat
+      devName := info.Name;
+      if (devName <> '.') and (devName <> '..') and (devName <> 'lo') and
+         (Pos('wl', devName) <> 1) and (Pos('ww', devName) <> 1) and
+         (Pos('docker', devName) <> 1) and (Pos('veth', devName) <> 1) and
+         (Pos('virbr', devName) <> 1) and (Pos('br-', devName) <> 1) then
+      begin
+        devPath := '/sys/class/net/' + devName;
+        carrierStr := ReadSysfsFirstLine(devPath + '/carrier');
+        operStr := ReadSysfsFirstLine(devPath + '/operstate');
+        if (carrierStr = '1') or SameText(operStr, 'up') then
+        begin
+          AConnected := True;
+          AInterfaceName := devName;
+          Break;
+        end
+        else if AInterfaceName = '' then
+          AInterfaceName := devName;
+      end;
+    until FindNext(info) <> 0;
+    FindClose(info);
+  end;
+
+  if AConnected and (AInterfaceName <> '') then
+  begin
+    if RunCommand('/usr/bin/nmcli', ['-t', '-f', 'IP4.ADDRESS', 'dev', 'show', AInterfaceName], nmOut) then
+    begin
+      lines := TStringList.Create();
+      try
+        lines.Text := Trim(nmOut);
+        for i := 0 to lines.Count - 1 do
+        begin
+          p := Pos('IP4.ADDRESS', lines[i]);
+          if p > 0 then
+          begin
+            AIpAddress := Trim(Copy(lines[i], Pos(':', lines[i]) + 1, Length(lines[i])));
+            Break;
+          end;
+        end;
+      finally
+        lines.Free();
+      end;
+    end;
+  end;
+
+  Result := (AInterfaceName <> '');
+end;
+
+procedure TShellWiredApplet.SetWiredState(AConnected: Boolean; const AInterfaceName: string; const AIpAddress: string);
+begin
+  FMockMode := True;
+  FIsConnected := AConnected;
+  FInterfaceName := AInterfaceName;
+  FIpAddress := AIpAddress;
+  UpdateUI();
+  if IsPopupOpen() then
+  begin
+    UpdatePopupContent();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellWiredApplet.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  UpdateUI();
+  isDark := IsDarkTheme();
+
+  if Assigned(FStatusLabel) then
+  begin
+    if isDark then
+      FStatusLabel.SetColor(0.85, 0.88, 0.95)
+    else
+      FStatusLabel.SetColor(0.12, 0.16, 0.23);
+  end;
+
+  if Assigned(FDetailsLabel) then
+  begin
+    if isDark then
+      FDetailsLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FDetailsLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+  if Assigned(FSettingsBtn) then
+    FSettingsBtn.Invalidate();
+  if Assigned(FPopupWindow) then
+    FPopupWindow.Invalidate();
+end;
+
+procedure TShellWiredApplet.UpdateUI();
+var
+  isDark: Boolean;
+begin
+  if FButton = nil then Exit;
+
+  isDark := IsDarkTheme();
+  FButton.Caption := '';
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.SetIconSVG(GetWiredIconSVG(FIsConnected, isDark));
+end;
+
+procedure TShellWiredApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  isDark: Boolean;
+begin
+  if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+
+  isDark := IsDarkTheme();
+  if isDark then
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 24 / 255, 25 / 255, 38 / 255, 0.98);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 69 / 255, 71 / 255, 90 / 255, 0.80);
+  end
+  else
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+  end;
+end;
+
+procedure TShellWiredApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+end;
+
+procedure TShellWiredApplet.HandleSettingsClick(Sender: TFtButton);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+  ExecShellCmdAsync('configsama Wired || configsama');
+end;
+
+procedure TShellWiredApplet.UpdatePopupContent();
+var
+  statText, detText: string;
+begin
+  if not Assigned(FPopupWindow) then Exit;
+  if FIsConnected then
+  begin
+    statText := 'Wired: Connected';
+    if FIpAddress <> '' then
+      detText := FInterfaceName + ' (' + FIpAddress + ')'
+    else if FInterfaceName <> '' then
+      detText := 'Interface: ' + FInterfaceName
+    else
+      detText := 'Cable connected';
+  end
+  else
+  begin
+    statText := 'Wired: Disconnected';
+    if FInterfaceName <> '' then
+      detText := FInterfaceName + ' (Cable unplugged)'
+    else
+      detText := 'No ethernet link';
+  end;
+
+  if Assigned(FStatusLabel) then
+    FStatusLabel.Text := statText;
+  if Assigned(FDetailsLabel) then
+    FDetailsLabel.Text := detText;
+end;
+
+procedure TShellWiredApplet.CreatePopupWindow();
+var
+  popX, popY, popW, popH: Integer;
+begin
+  if Assigned(FPopupWindow) then Exit;
+
+  popW := 220;
+  popH := 95;
+
+  if Assigned(FButton) and Assigned(FPanelWindow) then
+  begin
+    popX := FButton.X + (FButton.Width - popW) div 2;
+    popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
+  end
+  else
+  begin
+    popX := 100;
+    popY := 100;
+  end;
+
+  FPopupWindow := TFtWindow.Create(popW, popH, 'shellsama-wired-popup');
+  FPopupWindow.WindowType := ftwtPopupMenu;
+  FPopupWindow.Borderless := True;
+  FPopupWindow.SkipTaskbar := True;
+  FPopupWindow.SetPosition(popX, popY);
+  FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
+
+  FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
+  FPlate.OnPaint := @HandlePlatePaint;
+
+  FStatusLabel := TFtLabel.Create(FPopupWindow, 16, 12, popW - 32, 18, '');
+  FStatusLabel.Alignment := ftaLeft;
+
+  FDetailsLabel := TFtLabel.Create(FPopupWindow, 16, 34, popW - 32, 16, '');
+  FDetailsLabel.Alignment := ftaLeft;
+
+  FSettingsBtn := TFtButton.Create(FPopupWindow, 16, 58, popW - 32, 24, 'Wired Settings...');
+  FSettingsBtn.Flat := True;
+  FSettingsBtn.CornerRadius := 4.0;
+  FSettingsBtn.OnClick := @HandleSettingsClick;
+
+  UpdatePopupContent();
+  ApplyThemeStyle();
+end;
+
+procedure TShellWiredApplet.DestroyPopupWindow();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPlate := nil;
+    FStatusLabel := nil;
+    FDetailsLabel := nil;
+    FSettingsBtn := nil;
+    FPopupWindow.Free();
+    FPopupWindow := nil;
+  end;
+end;
+
+procedure TShellWiredApplet.ShowPopup();
+begin
+  if not Assigned(FPopupWindow) then
+    CreatePopupWindow();
+  UpdatePopupContent();
+  ApplyThemeStyle();
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.Show();
+    FPopupWindow.GrabPopupInput();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+    if Assigned(FButton) then
+      FButton.Toggled := True;
+  end;
+end;
+
+procedure TShellWiredApplet.HidePopup();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.UngrabInput();
+    FPopupWindow.Hide();
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
+end;
+
+procedure TShellWiredApplet.TogglePopup();
+begin
+  if IsPopupOpen() then
+    HidePopup()
+  else
+    ShowPopup();
+end;
+
+function TShellWiredApplet.IsPopupOpen(): Boolean;
+begin
+  Result := Assigned(FPopupWindow) and FPopupWindow.Visible;
+end;
+
+procedure TShellWiredApplet.HandleButtonClick(Sender: TFtButton);
+begin
+  TogglePopup();
+end;
+
+procedure TShellWiredApplet.Tick();
+var
+  nowTick: Int64;
+  curConn: Boolean;
+  curIface, curIp: string;
+begin
+  if FMockMode then Exit;
+  nowTick := GetTickCount64();
+  if (nowTick - FLastCheckTick < 3000) or FQueryBusy then Exit;
+  FLastCheckTick := nowTick;
+  FQueryBusy := True;
+  try
+    if QueryWired(curConn, curIface, curIp) then
+    begin
+      if (curConn <> FIsConnected) or (curIface <> FInterfaceName) or (curIp <> FIpAddress) then
+      begin
+        FIsConnected := curConn;
+        FInterfaceName := curIface;
+        FIpAddress := curIp;
+        UpdateUI();
+        if IsPopupOpen() then
+        begin
+          UpdatePopupContent();
+          if Assigned(FPlate) then
+            FPlate.Invalidate();
+        end;
+      end;
+    end;
+  finally
+    FQueryBusy := False;
+  end;
+end;
+
+// =============================================================================
+// TShellLanApplet Implementation
+// =============================================================================
+
+constructor TShellLanApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+begin
+  inherited Create();
+  FPanelWindow := AParentWindow;
+  FIsConnected := False;
+  FIsEnabled := True;
+  FSsid := '';
+  FSignal := 0;
+  FMockMode := False;
+  FLastCheckTick := 0;
+  FQueryBusy := False;
+  FOnDismiss := nil;
+
+  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
+  FButton.Flat := True;
+  FButton.IsToggle := True;
+  FButton.CornerRadius := 6.0;
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.OnClick := @HandleButtonClick;
+
+  QueryLan(FIsConnected, FSsid, FSignal, FIsEnabled);
+  UpdateUI();
+end;
+
+destructor TShellLanApplet.Destroy();
+begin
+  DestroyPopupWindow();
+  if Assigned(FButton) then
+  begin
+    FButton.Free();
+    FButton := nil;
+  end;
+  inherited Destroy();
+end;
+
+procedure TShellLanApplet.SetBounds(AX, AY, AW, AH: Integer);
+begin
+  if Assigned(FButton) then
+    FButton.SetBounds(AX, AY, AW, AH);
+end;
+
+function TShellLanApplet.QueryLan(out AConnected: Boolean; out ASsid: string; out ASignal: Integer; out AEnabled: Boolean): Boolean;
+var
+  nmOut: string;
+  lines: TStringList;
+  i, p: Integer;
+  line, restField, ssidField, sigField: string;
+begin
+  AConnected := False;
+  ASsid := '';
+  ASignal := 0;
+  AEnabled := True;
+  Result := False;
+
+  if RunCommand('/usr/bin/nmcli', ['-t', '-f', 'active,ssid,signal', 'dev', 'wifi'], nmOut) then
+  begin
+    lines := TStringList.Create();
+    try
+      lines.Text := Trim(nmOut);
+      for i := 0 to lines.Count - 1 do
+      begin
+        line := lines[i];
+        if Pos('yes:', line) = 1 then
+        begin
+          AConnected := True;
+          restField := Copy(line, 5, Length(line));
+          p := LastDelimiter(':', restField);
+          if p > 0 then
+          begin
+            ssidField := Copy(restField, 1, p - 1);
+            sigField := Copy(restField, p + 1, Length(restField));
+            ASsid := ssidField;
+            ASignal := StrToIntDef(sigField, 50);
+          end
+          else
+            ASsid := restField;
+          Break;
+        end;
+      end;
+      Result := True;
+    finally
+      lines.Free();
+    end;
+  end;
+
+  if not AConnected then
+  begin
+    if RunCommand('/usr/bin/nmcli', ['radio', 'wifi'], nmOut) then
+      AEnabled := SameText(Trim(nmOut), 'enabled');
+  end;
+end;
+
+procedure TShellLanApplet.SetLanState(AConnected: Boolean; const ASsid: string; ASignal: Integer; AEnabled: Boolean);
+begin
+  FMockMode := True;
+  FIsConnected := AConnected;
+  FSsid := ASsid;
+  FSignal := EnsureRange(ASignal, 0, 100);
+  FIsEnabled := AEnabled;
+  UpdateUI();
+  if IsPopupOpen() then
+  begin
+    UpdatePopupContent();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellLanApplet.ToggleLan();
+var
+  dummy: string;
+begin
+  if FIsEnabled then
+    RunCommand('/usr/bin/nmcli', ['radio', 'wifi', 'off'], dummy)
+  else
+    RunCommand('/usr/bin/nmcli', ['radio', 'wifi', 'on'], dummy);
+  FIsEnabled := not FIsEnabled;
+  UpdateUI();
+  if IsPopupOpen() then
+  begin
+    UpdatePopupContent();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellLanApplet.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  UpdateUI();
+  isDark := IsDarkTheme();
+
+  if Assigned(FStatusLabel) then
+  begin
+    if isDark then
+      FStatusLabel.SetColor(0.85, 0.88, 0.95)
+    else
+      FStatusLabel.SetColor(0.12, 0.16, 0.23);
+  end;
+
+  if Assigned(FDetailsLabel) then
+  begin
+    if isDark then
+      FDetailsLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FDetailsLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+  if Assigned(FToggleBtn) then
+    FToggleBtn.Invalidate();
+  if Assigned(FSettingsBtn) then
+    FSettingsBtn.Invalidate();
+  if Assigned(FPopupWindow) then
+    FPopupWindow.Invalidate();
+end;
+
+procedure TShellLanApplet.UpdateUI();
+var
+  isDark: Boolean;
+begin
+  if FButton = nil then Exit;
+
+  isDark := IsDarkTheme();
+  FButton.Caption := '';
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.SetIconSVG(GetLanIconSVG(FIsConnected, FSignal, FIsEnabled, isDark));
+end;
+
+procedure TShellLanApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  isDark: Boolean;
+begin
+  if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+
+  isDark := IsDarkTheme();
+  if isDark then
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 24 / 255, 25 / 255, 38 / 255, 0.98);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 69 / 255, 71 / 255, 90 / 255, 0.80);
+  end
+  else
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+  end;
+end;
+
+procedure TShellLanApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+end;
+
+procedure TShellLanApplet.HandleToggleClick(Sender: TFtButton);
+begin
+  ToggleLan();
+end;
+
+procedure TShellLanApplet.HandleSettingsClick(Sender: TFtButton);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+  ExecShellCmdAsync('configsama WLAN || configsama');
+end;
+
+procedure TShellLanApplet.UpdatePopupContent();
+var
+  statText, detText: string;
+begin
+  if not Assigned(FPopupWindow) then Exit;
+  if not FIsEnabled then
+  begin
+    statText := 'Wi-Fi: Disabled';
+    detText := 'Wireless radio is off';
+  end
+  else if FIsConnected then
+  begin
+    statText := 'Wi-Fi: Connected';
+    if FSsid <> '' then
+      detText := FSsid + ' (' + IntToStr(FSignal) + '%)'
+    else
+      detText := 'Signal: ' + IntToStr(FSignal) + '%';
+  end
+  else
+  begin
+    statText := 'Wi-Fi: Disconnected';
+    detText := 'Not connected to any network';
+  end;
+
+  if Assigned(FStatusLabel) then
+    FStatusLabel.Text := statText;
+  if Assigned(FDetailsLabel) then
+    FDetailsLabel.Text := detText;
+end;
+
+procedure TShellLanApplet.CreatePopupWindow();
+var
+  popX, popY, popW, popH: Integer;
+begin
+  if Assigned(FPopupWindow) then Exit;
+
+  popW := 240;
+  popH := 105;
+
+  if Assigned(FButton) and Assigned(FPanelWindow) then
+  begin
+    popX := FButton.X + (FButton.Width - popW) div 2;
+    popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
+  end
+  else
+  begin
+    popX := 100;
+    popY := 100;
+  end;
+
+  FPopupWindow := TFtWindow.Create(popW, popH, 'shellsama-lan-popup');
+  FPopupWindow.WindowType := ftwtPopupMenu;
+  FPopupWindow.Borderless := True;
+  FPopupWindow.SkipTaskbar := True;
+  FPopupWindow.SetPosition(popX, popY);
+  FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
+
+  FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
+  FPlate.OnPaint := @HandlePlatePaint;
+
+  FStatusLabel := TFtLabel.Create(FPopupWindow, 16, 12, popW - 32, 18, '');
+  FStatusLabel.Alignment := ftaLeft;
+
+  FDetailsLabel := TFtLabel.Create(FPopupWindow, 16, 34, popW - 32, 16, '');
+  FDetailsLabel.Alignment := ftaLeft;
+
+  FToggleBtn := TFtButton.Create(FPopupWindow, 16, 62, 95, 26, 'Toggle Wi-Fi');
+  FToggleBtn.Flat := True;
+  FToggleBtn.CornerRadius := 4.0;
+  FToggleBtn.OnClick := @HandleToggleClick;
+
+  FSettingsBtn := TFtButton.Create(FPopupWindow, 116, 62, popW - 132, 26, 'Wi-Fi Settings...');
+  FSettingsBtn.Flat := True;
+  FSettingsBtn.CornerRadius := 4.0;
+  FSettingsBtn.OnClick := @HandleSettingsClick;
+
+  UpdatePopupContent();
+  ApplyThemeStyle();
+end;
+
+procedure TShellLanApplet.DestroyPopupWindow();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPlate := nil;
+    FStatusLabel := nil;
+    FDetailsLabel := nil;
+    FToggleBtn := nil;
+    FSettingsBtn := nil;
+    FPopupWindow.Free();
+    FPopupWindow := nil;
+  end;
+end;
+
+procedure TShellLanApplet.ShowPopup();
+begin
+  if not Assigned(FPopupWindow) then
+    CreatePopupWindow();
+  UpdatePopupContent();
+  ApplyThemeStyle();
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.Show();
+    FPopupWindow.GrabPopupInput();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+    if Assigned(FButton) then
+      FButton.Toggled := True;
+  end;
+end;
+
+procedure TShellLanApplet.HidePopup();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.UngrabInput();
+    FPopupWindow.Hide();
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
+end;
+
+procedure TShellLanApplet.TogglePopup();
+begin
+  if IsPopupOpen() then
+    HidePopup()
+  else
+    ShowPopup();
+end;
+
+function TShellLanApplet.IsPopupOpen(): Boolean;
+begin
+  Result := Assigned(FPopupWindow) and FPopupWindow.Visible;
+end;
+
+procedure TShellLanApplet.HandleButtonClick(Sender: TFtButton);
+begin
+  TogglePopup();
+end;
+
+procedure TShellLanApplet.Tick();
+var
+  nowTick: Int64;
+  curConn, curEn: Boolean;
+  curSsid: string;
+  curSig: Integer;
+begin
+  if FMockMode then Exit;
+  nowTick := GetTickCount64();
+  if (nowTick - FLastCheckTick < 3000) or FQueryBusy then Exit;
+  FLastCheckTick := nowTick;
+  FQueryBusy := True;
+  try
+    if QueryLan(curConn, curSsid, curSig, curEn) then
+    begin
+      if (curConn <> FIsConnected) or (curSsid <> FSsid) or (curSig <> FSignal) or (curEn <> FIsEnabled) then
+      begin
+        FIsConnected := curConn;
+        FSsid := curSsid;
+        FSignal := curSig;
+        FIsEnabled := curEn;
+        UpdateUI();
+        if IsPopupOpen() then
+        begin
+          UpdatePopupContent();
+          if Assigned(FPlate) then
+            FPlate.Invalidate();
+        end;
+      end;
+    end;
+  finally
+    FQueryBusy := False;
+  end;
+end;
+
+// =============================================================================
+// TShellBluetoothApplet Implementation
+// =============================================================================
+
+constructor TShellBluetoothApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+begin
+  inherited Create();
+  FPanelWindow := AParentWindow;
+  FIsEnabled := False;
+  FIsConnected := False;
+  FConnectedDevice := '';
+  FMockMode := False;
+  FLastCheckTick := 0;
+  FQueryBusy := False;
+  FOnDismiss := nil;
+
+  FButton := TFtButton.Create(FPanelWindow, AX, AY, AW, AH, '');
+  FButton.Flat := True;
+  FButton.IsToggle := True;
+  FButton.CornerRadius := 6.0;
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.OnClick := @HandleButtonClick;
+
+  QueryBluetooth(FIsEnabled, FIsConnected, FConnectedDevice);
+  UpdateUI();
+end;
+
+destructor TShellBluetoothApplet.Destroy();
+begin
+  DestroyPopupWindow();
+  if Assigned(FButton) then
+  begin
+    FButton.Free();
+    FButton := nil;
+  end;
+  inherited Destroy();
+end;
+
+procedure TShellBluetoothApplet.SetBounds(AX, AY, AW, AH: Integer);
+begin
+  if Assigned(FButton) then
+    FButton.SetBounds(AX, AY, AW, AH);
+end;
+
+function TShellBluetoothApplet.QueryBluetooth(out AEnabled: Boolean; out AConnected: Boolean; out AConnectedDevice: string): Boolean;
+var
+  outStr: string;
+  lines: TStringList;
+  p: Integer;
+begin
+  AEnabled := False;
+  AConnected := False;
+  AConnectedDevice := '';
+  Result := False;
+
+  if RunCommand('/usr/bin/bluetoothctl', ['show'], outStr) then
+  begin
+    Result := True;
+    if Pos('Powered: yes', outStr) > 0 then
+      AEnabled := True;
+  end;
+
+  if AEnabled then
+  begin
+    if RunCommand('/usr/bin/bluetoothctl', ['devices', 'Connected'], outStr) then
+    begin
+      outStr := Trim(outStr);
+      if Length(outStr) > 0 then
+      begin
+        AConnected := True;
+        lines := TStringList.Create();
+        try
+          lines.Text := outStr;
+          if lines.Count > 0 then
+          begin
+            p := Pos(' ', lines[0]);
+            if p > 0 then
+            begin
+              p := PosEx(' ', lines[0], p + 1);
+              if p > 0 then
+                AConnectedDevice := Trim(Copy(lines[0], p + 1, Length(lines[0])))
+              else
+                AConnectedDevice := 'Connected Device';
+            end
+            else
+              AConnectedDevice := 'Connected Device';
+          end;
+        finally
+          lines.Free();
+        end;
+      end;
+    end;
+  end;
+end;
+
+procedure TShellBluetoothApplet.SetBluetoothState(AEnabled: Boolean; AConnected: Boolean; const AConnectedDevice: string);
+begin
+  FMockMode := True;
+  FIsEnabled := AEnabled;
+  FIsConnected := AConnected;
+  FConnectedDevice := AConnectedDevice;
+  UpdateUI();
+  if IsPopupOpen() then
+  begin
+    UpdatePopupContent();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellBluetoothApplet.ToggleBluetooth();
+var
+  dummy: string;
+begin
+  if FIsEnabled then
+    RunCommand('/usr/bin/bluetoothctl', ['power', 'off'], dummy)
+  else
+    RunCommand('/usr/bin/bluetoothctl', ['power', 'on'], dummy);
+  FIsEnabled := not FIsEnabled;
+  UpdateUI();
+  if IsPopupOpen() then
+  begin
+    UpdatePopupContent();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+  end;
+end;
+
+procedure TShellBluetoothApplet.ApplyThemeStyle();
+var
+  isDark: Boolean;
+begin
+  UpdateUI();
+  isDark := IsDarkTheme();
+
+  if Assigned(FStatusLabel) then
+  begin
+    if isDark then
+      FStatusLabel.SetColor(0.85, 0.88, 0.95)
+    else
+      FStatusLabel.SetColor(0.12, 0.16, 0.23);
+  end;
+
+  if Assigned(FDetailsLabel) then
+  begin
+    if isDark then
+      FDetailsLabel.SetColor(0.65, 0.70, 0.80)
+    else
+      FDetailsLabel.SetColor(0.40, 0.45, 0.55);
+  end;
+
+  if Assigned(FPlate) then
+    FPlate.Invalidate();
+  if Assigned(FToggleBtn) then
+    FToggleBtn.Invalidate();
+  if Assigned(FSettingsBtn) then
+    FSettingsBtn.Invalidate();
+  if Assigned(FPopupWindow) then
+    FPopupWindow.Invalidate();
+end;
+
+procedure TShellBluetoothApplet.UpdateUI();
+var
+  isDark: Boolean;
+begin
+  if FButton = nil then Exit;
+
+  isDark := IsDarkTheme();
+  FButton.Caption := '';
+  FButton.IconPosition := ftipOnly;
+  FButton.SetIconSize(18, 18);
+  FButton.SetIconSVG(GetBluetoothIconSVG(FIsEnabled, FIsConnected, isDark));
+end;
+
+procedure TShellBluetoothApplet.HandlePlatePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
+var
+  isDark: Boolean;
+begin
+  if not Assigned(Sender) or not Assigned(Canvas) then Exit;
+
+  isDark := IsDarkTheme();
+  if isDark then
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 24 / 255, 25 / 255, 38 / 255, 0.98);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 69 / 255, 71 / 255, 90 / 255, 0.80);
+  end
+  else
+  begin
+    Canvas.DrawRoundedRect(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 1.0, 1.0, 1.0);
+    Canvas.DrawRoundedRectOutline(0, 0, Sender.Width, Sender.Height, 6.0, 1.0, 0.80, 0.84, 0.88, 1.0);
+  end;
+end;
+
+procedure TShellBluetoothApplet.HandlePopupWindowDismiss(Sender: TFtWindow);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+end;
+
+procedure TShellBluetoothApplet.HandleToggleClick(Sender: TFtButton);
+begin
+  ToggleBluetooth();
+end;
+
+procedure TShellBluetoothApplet.HandleSettingsClick(Sender: TFtButton);
+begin
+  HidePopup();
+  if Assigned(FOnDismiss) then
+    FOnDismiss(Self);
+  ExecShellCmdAsync('configsama Bluetooth || configsama');
+end;
+
+procedure TShellBluetoothApplet.UpdatePopupContent();
+var
+  statText, detText: string;
+begin
+  if not Assigned(FPopupWindow) then Exit;
+  if not FIsEnabled then
+  begin
+    statText := 'Bluetooth: Disabled';
+    detText := 'Controller is turned off';
+  end
+  else if FIsConnected then
+  begin
+    statText := 'Bluetooth: Connected';
+    if FConnectedDevice <> '' then
+      detText := FConnectedDevice
+    else
+      detText := 'Peripheral connected';
+  end
+  else
+  begin
+    statText := 'Bluetooth: Enabled';
+    detText := 'No devices connected';
+  end;
+
+  if Assigned(FStatusLabel) then
+    FStatusLabel.Text := statText;
+  if Assigned(FDetailsLabel) then
+    FDetailsLabel.Text := detText;
+end;
+
+procedure TShellBluetoothApplet.CreatePopupWindow();
+var
+  popX, popY, popW, popH: Integer;
+begin
+  if Assigned(FPopupWindow) then Exit;
+
+  popW := 240;
+  popH := 105;
+
+  if Assigned(FButton) and Assigned(FPanelWindow) then
+  begin
+    popX := FButton.X + (FButton.Width - popW) div 2;
+    popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
+    if FPanelWindow.Y < 100 then
+      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    else
+      popY := FPanelWindow.Y - popH - 4;
+  end
+  else
+  begin
+    popX := 100;
+    popY := 100;
+  end;
+
+  FPopupWindow := TFtWindow.Create(popW, popH, 'shellsama-bluetooth-popup');
+  FPopupWindow.WindowType := ftwtPopupMenu;
+  FPopupWindow.Borderless := True;
+  FPopupWindow.SkipTaskbar := True;
+  FPopupWindow.SetPosition(popX, popY);
+  FPopupWindow.OnPopupDismiss := @HandlePopupWindowDismiss;
+
+  FPlate := TFtDrawingArea.Create(FPopupWindow, 0, 0, popW, popH);
+  FPlate.OnPaint := @HandlePlatePaint;
+
+  FStatusLabel := TFtLabel.Create(FPopupWindow, 16, 12, popW - 32, 18, '');
+  FStatusLabel.Alignment := ftaLeft;
+
+  FDetailsLabel := TFtLabel.Create(FPopupWindow, 16, 34, popW - 32, 16, '');
+  FDetailsLabel.Alignment := ftaLeft;
+
+  FToggleBtn := TFtButton.Create(FPopupWindow, 16, 62, 95, 26, 'Toggle BT');
+  FToggleBtn.Flat := True;
+  FToggleBtn.CornerRadius := 4.0;
+  FToggleBtn.OnClick := @HandleToggleClick;
+
+  FSettingsBtn := TFtButton.Create(FPopupWindow, 116, 62, popW - 132, 26, 'BT Settings...');
+  FSettingsBtn.Flat := True;
+  FSettingsBtn.CornerRadius := 4.0;
+  FSettingsBtn.OnClick := @HandleSettingsClick;
+
+  UpdatePopupContent();
+  ApplyThemeStyle();
+end;
+
+procedure TShellBluetoothApplet.DestroyPopupWindow();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPlate := nil;
+    FStatusLabel := nil;
+    FDetailsLabel := nil;
+    FToggleBtn := nil;
+    FSettingsBtn := nil;
+    FPopupWindow.Free();
+    FPopupWindow := nil;
+  end;
+end;
+
+procedure TShellBluetoothApplet.ShowPopup();
+begin
+  if not Assigned(FPopupWindow) then
+    CreatePopupWindow();
+  UpdatePopupContent();
+  ApplyThemeStyle();
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.Show();
+    FPopupWindow.GrabPopupInput();
+    if Assigned(FPlate) then
+      FPlate.Invalidate();
+    if Assigned(FButton) then
+      FButton.Toggled := True;
+  end;
+end;
+
+procedure TShellBluetoothApplet.HidePopup();
+begin
+  if Assigned(FPopupWindow) then
+  begin
+    FPopupWindow.UngrabInput();
+    FPopupWindow.Hide();
+    if Assigned(FButton) then
+      FButton.Toggled := False;
+  end;
+end;
+
+procedure TShellBluetoothApplet.TogglePopup();
+begin
+  if IsPopupOpen() then
+    HidePopup()
+  else
+    ShowPopup();
+end;
+
+function TShellBluetoothApplet.IsPopupOpen(): Boolean;
+begin
+  Result := Assigned(FPopupWindow) and FPopupWindow.Visible;
+end;
+
+procedure TShellBluetoothApplet.HandleButtonClick(Sender: TFtButton);
+begin
+  TogglePopup();
+end;
+
+procedure TShellBluetoothApplet.Tick();
+var
+  nowTick: Int64;
+  curEn, curConn: Boolean;
+  curDev: string;
+begin
+  if FMockMode then Exit;
+  nowTick := GetTickCount64();
+  if (nowTick - FLastCheckTick < 3000) or FQueryBusy then Exit;
+  FLastCheckTick := nowTick;
+  FQueryBusy := True;
+  try
+    if QueryBluetooth(curEn, curConn, curDev) then
+    begin
+      if (curEn <> FIsEnabled) or (curConn <> FIsConnected) or (curDev <> FConnectedDevice) then
+      begin
+        FIsEnabled := curEn;
+        FIsConnected := curConn;
+        FConnectedDevice := curDev;
+        UpdateUI();
+        if IsPopupOpen() then
+        begin
+          UpdatePopupContent();
+          if Assigned(FPlate) then
+            FPlate.Invalidate();
+        end;
+      end;
+    end;
+  finally
+    FQueryBusy := False;
+  end;
 end;
 
 end.

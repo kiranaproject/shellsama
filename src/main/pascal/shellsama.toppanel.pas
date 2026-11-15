@@ -21,7 +21,7 @@ type
   PCardinalArray = ^TCardinalArray;
   TCardinalArray = array[0..4] of Cardinal;
 
-  TPanelAppletKind = (pakNone, pakVolume, pakClock, pakSession);
+  TPanelAppletKind = (pakNone, pakVolume, pakClock, pakSession, pakBattery, pakBluetooth, pakWired, pakLan);
 
   TShellTopPanel = class
   private
@@ -31,6 +31,10 @@ type
     FSessionApplet  : TShellSessionApplet;
     FClockApplet    : TShellClockApplet;
     FVolumeApplet   : TShellVolumeApplet;
+    FBatteryApplet  : TShellBatteryApplet;
+    FBluetoothApplet: TShellBluetoothApplet;
+    FWiredApplet    : TShellWiredApplet;
+    FLanApplet      : TShellLanApplet;
     FTray           : TShellSystemTray;
     FLauncher       : TShellLauncher;
     FIsVisible      : Boolean;
@@ -66,6 +70,14 @@ type
     procedure HandleClockButtonHover(Sender: TFtButton; Hovered: Boolean);
     procedure HandleSessionButtonClick(Sender: TFtButton);
     procedure HandleSessionButtonHover(Sender: TFtButton; Hovered: Boolean);
+    procedure HandleBatteryButtonClick(Sender: TFtButton);
+    procedure HandleBatteryButtonHover(Sender: TFtButton; Hovered: Boolean);
+    procedure HandleBluetoothButtonClick(Sender: TFtButton);
+    procedure HandleBluetoothButtonHover(Sender: TFtButton; Hovered: Boolean);
+    procedure HandleWiredButtonClick(Sender: TFtButton);
+    procedure HandleWiredButtonHover(Sender: TFtButton; Hovered: Boolean);
+    procedure HandleLanButtonClick(Sender: TFtButton);
+    procedure HandleLanButtonHover(Sender: TFtButton; Hovered: Boolean);
     procedure HandleAppletDismiss(Sender: TObject);
     procedure HandleSettingsDarkModeChange(Sender: TObject);
     procedure HandleSettingsClockFormatChange(Sender: TObject);
@@ -104,6 +116,10 @@ type
     property ShowDesktopWidget: TFtButton       read FShowDesktopBtn;
     property TrayWidget      : TShellSystemTray read FTray;
     property VolumeApplet    : TShellVolumeApplet read FVolumeApplet;
+    property BatteryApplet   : TShellBatteryApplet   read FBatteryApplet;
+    property BluetoothApplet : TShellBluetoothApplet read FBluetoothApplet;
+    property WiredApplet     : TShellWiredApplet     read FWiredApplet;
+    property LanApplet       : TShellLanApplet       read FLanApplet;
     property SessionApplet   : TShellSessionApplet read FSessionApplet;
     property ActiveApplet    : TPanelAppletKind read FActiveApplet;
     property TrackingActive  : Boolean          read FTrackingActive;
@@ -133,6 +149,10 @@ const
   TOPPANEL_SESSION_W      = 32;
   TOPPANEL_CLOCK_W        = 216;
   TOPPANEL_VOLUME_W       = 36;
+  TOPPANEL_BATTERY_W      = 36;
+  TOPPANEL_BLUETOOTH_W    = 36;
+  TOPPANEL_WIRED_W        = 36;
+  TOPPANEL_LAN_W          = 36;
   TOPPANEL_GAP            = 4;
   TOPPANEL_TRAY_GAP       = 8;
   TOPPANEL_RIGHT_INSET    = 4;
@@ -304,6 +324,30 @@ begin
     FTray := nil;
   end;
 
+  if Assigned(FLanApplet) then
+  begin
+    FLanApplet.Free();
+    FLanApplet := nil;
+  end;
+
+  if Assigned(FWiredApplet) then
+  begin
+    FWiredApplet.Free();
+    FWiredApplet := nil;
+  end;
+
+  if Assigned(FBluetoothApplet) then
+  begin
+    FBluetoothApplet.Free();
+    FBluetoothApplet := nil;
+  end;
+
+  if Assigned(FBatteryApplet) then
+  begin
+    FBatteryApplet.Free();
+    FBatteryApplet := nil;
+  end;
+
   if Assigned(FVolumeApplet) then
   begin
     FVolumeApplet.Free();
@@ -354,9 +398,15 @@ begin
   if Assigned(FTray) then
   begin
     trayW := FTray.Width;
-    trayX := (FPanelWidth - (TOPPANEL_RIGHT_INSET + TOPPANEL_SHOW_DESKTOP_W + TOPPANEL_GAP +
-                             TOPPANEL_SESSION_W + TOPPANEL_GAP + TOPPANEL_CLOCK_W +
-                             TOPPANEL_GAP + TOPPANEL_VOLUME_W + TOPPANEL_TRAY_GAP)) - trayW;
+    if Assigned(FLanApplet) and Assigned(FLanApplet.Button) then
+      trayX := FLanApplet.Button.X - TOPPANEL_TRAY_GAP - trayW
+    else
+      trayX := (FPanelWidth - (TOPPANEL_RIGHT_INSET + TOPPANEL_SHOW_DESKTOP_W + TOPPANEL_GAP +
+                               TOPPANEL_SESSION_W + TOPPANEL_GAP + TOPPANEL_CLOCK_W +
+                               TOPPANEL_GAP + TOPPANEL_VOLUME_W + TOPPANEL_GAP +
+                               TOPPANEL_BATTERY_W + TOPPANEL_GAP + TOPPANEL_BLUETOOTH_W +
+                               TOPPANEL_GAP + TOPPANEL_WIRED_W + TOPPANEL_GAP +
+                               TOPPANEL_LAN_W + TOPPANEL_TRAY_GAP)) - trayW;
     FTray.SetPosition(trayX, (FPanelHeight - FTray.IconSize) div 2);
   end;
 end;
@@ -403,6 +453,62 @@ begin
     ActivateApplet(pakSession);
 end;
 
+procedure TShellTopPanel.HandleBatteryButtonClick(Sender: TFtButton);
+begin
+  if FActiveApplet = pakBattery then
+    DismissAllApplets()
+  else
+    ActivateApplet(pakBattery);
+end;
+
+procedure TShellTopPanel.HandleBatteryButtonHover(Sender: TFtButton; Hovered: Boolean);
+begin
+  if Hovered and FTrackingActive and (FActiveApplet <> pakBattery) then
+    ActivateApplet(pakBattery);
+end;
+
+procedure TShellTopPanel.HandleBluetoothButtonClick(Sender: TFtButton);
+begin
+  if FActiveApplet = pakBluetooth then
+    DismissAllApplets()
+  else
+    ActivateApplet(pakBluetooth);
+end;
+
+procedure TShellTopPanel.HandleBluetoothButtonHover(Sender: TFtButton; Hovered: Boolean);
+begin
+  if Hovered and FTrackingActive and (FActiveApplet <> pakBluetooth) then
+    ActivateApplet(pakBluetooth);
+end;
+
+procedure TShellTopPanel.HandleWiredButtonClick(Sender: TFtButton);
+begin
+  if FActiveApplet = pakWired then
+    DismissAllApplets()
+  else
+    ActivateApplet(pakWired);
+end;
+
+procedure TShellTopPanel.HandleWiredButtonHover(Sender: TFtButton; Hovered: Boolean);
+begin
+  if Hovered and FTrackingActive and (FActiveApplet <> pakWired) then
+    ActivateApplet(pakWired);
+end;
+
+procedure TShellTopPanel.HandleLanButtonClick(Sender: TFtButton);
+begin
+  if FActiveApplet = pakLan then
+    DismissAllApplets()
+  else
+    ActivateApplet(pakLan);
+end;
+
+procedure TShellTopPanel.HandleLanButtonHover(Sender: TFtButton; Hovered: Boolean);
+begin
+  if Hovered and FTrackingActive and (FActiveApplet <> pakLan) then
+    ActivateApplet(pakLan);
+end;
+
 procedure TShellTopPanel.HandleAppletDismiss(Sender: TObject);
 begin
   DismissAllApplets();
@@ -418,6 +524,18 @@ begin
 
   if Assigned(FSessionApplet) and FSessionApplet.IsPopupOpen() then
     FSessionApplet.HidePopup();
+
+  if Assigned(FBatteryApplet) and FBatteryApplet.IsPopupOpen() then
+    FBatteryApplet.HidePopup();
+
+  if Assigned(FBluetoothApplet) and FBluetoothApplet.IsPopupOpen() then
+    FBluetoothApplet.HidePopup();
+
+  if Assigned(FWiredApplet) and FWiredApplet.IsPopupOpen() then
+    FWiredApplet.HidePopup();
+
+  if Assigned(FLanApplet) and FLanApplet.IsPopupOpen() then
+    FLanApplet.HidePopup();
 end;
 
 procedure TShellTopPanel.DismissAllApplets();
@@ -444,6 +562,18 @@ begin
     pakSession:
       if Assigned(FSessionApplet) then
         FSessionApplet.ShowPopup();
+    pakBattery:
+      if Assigned(FBatteryApplet) then
+        FBatteryApplet.ShowPopup();
+    pakBluetooth:
+      if Assigned(FBluetoothApplet) then
+        FBluetoothApplet.ShowPopup();
+    pakWired:
+      if Assigned(FWiredApplet) then
+        FWiredApplet.ShowPopup();
+    pakLan:
+      if Assigned(FLanApplet) then
+        FLanApplet.ShowPopup();
   end;
 
   UpdateButtonStates();
@@ -459,6 +589,18 @@ begin
 
   if Assigned(FSessionApplet) and Assigned(FSessionApplet.Button) then
     FSessionApplet.Button.Toggled := (FActiveApplet = pakSession);
+
+  if Assigned(FBatteryApplet) and Assigned(FBatteryApplet.Button) then
+    FBatteryApplet.Button.Toggled := (FActiveApplet = pakBattery);
+
+  if Assigned(FBluetoothApplet) and Assigned(FBluetoothApplet.Button) then
+    FBluetoothApplet.Button.Toggled := (FActiveApplet = pakBluetooth);
+
+  if Assigned(FWiredApplet) and Assigned(FWiredApplet.Button) then
+    FWiredApplet.Button.Toggled := (FActiveApplet = pakWired);
+
+  if Assigned(FLanApplet) and Assigned(FLanApplet.Button) then
+    FLanApplet.Button.Toggled := (FActiveApplet = pakLan);
 end;
 
 function TShellTopPanel.GetClockWidget(): TFtWidget;
@@ -542,7 +684,39 @@ begin
   FVolumeApplet.Button.OnHover := @HandleVolumeButtonHover;
   FVolumeApplet.OnDismiss := @HandleAppletDismiss;
 
-  // 6. System Tray Host
+  // 6. Battery Applet
+  FBatteryApplet := TShellBatteryApplet.Create(FWindow,
+    FVolumeApplet.Button.X - TOPPANEL_GAP - TOPPANEL_BATTERY_W,
+    3, TOPPANEL_BATTERY_W, 32);
+  FBatteryApplet.Button.OnClick := @HandleBatteryButtonClick;
+  FBatteryApplet.Button.OnHover := @HandleBatteryButtonHover;
+  FBatteryApplet.OnDismiss := @HandleAppletDismiss;
+
+  // 7. Bluetooth Applet
+  FBluetoothApplet := TShellBluetoothApplet.Create(FWindow,
+    FBatteryApplet.Button.X - TOPPANEL_GAP - TOPPANEL_BLUETOOTH_W,
+    3, TOPPANEL_BLUETOOTH_W, 32);
+  FBluetoothApplet.Button.OnClick := @HandleBluetoothButtonClick;
+  FBluetoothApplet.Button.OnHover := @HandleBluetoothButtonHover;
+  FBluetoothApplet.OnDismiss := @HandleAppletDismiss;
+
+  // 8. Wired Applet
+  FWiredApplet := TShellWiredApplet.Create(FWindow,
+    FBluetoothApplet.Button.X - TOPPANEL_GAP - TOPPANEL_WIRED_W,
+    3, TOPPANEL_WIRED_W, 32);
+  FWiredApplet.Button.OnClick := @HandleWiredButtonClick;
+  FWiredApplet.Button.OnHover := @HandleWiredButtonHover;
+  FWiredApplet.OnDismiss := @HandleAppletDismiss;
+
+  // 9. LAN / Wi-Fi Applet
+  FLanApplet := TShellLanApplet.Create(FWindow,
+    FWiredApplet.Button.X - TOPPANEL_GAP - TOPPANEL_LAN_W,
+    3, TOPPANEL_LAN_W, 32);
+  FLanApplet.Button.OnClick := @HandleLanButtonClick;
+  FLanApplet.Button.OnHover := @HandleLanButtonHover;
+  FLanApplet.OnDismiss := @HandleAppletDismiss;
+
+  // 10. System Tray Host
   FTray := TShellSystemTray.Create(FWindow, 0);
   FTray.IconSize := 22;
   FTray.IconGap := 4;
@@ -629,6 +803,18 @@ begin
   if Assigned(FVolumeApplet) then
     FVolumeApplet.ApplyThemeStyle();
 
+  if Assigned(FBatteryApplet) then
+    FBatteryApplet.ApplyThemeStyle();
+
+  if Assigned(FBluetoothApplet) then
+    FBluetoothApplet.ApplyThemeStyle();
+
+  if Assigned(FWiredApplet) then
+    FWiredApplet.ApplyThemeStyle();
+
+  if Assigned(FLanApplet) then
+    FLanApplet.ApplyThemeStyle();
+
   if Assigned(FClockApplet) then
     FClockApplet.ApplyThemeStyle();
 
@@ -645,6 +831,14 @@ begin
 
   if Assigned(FVolumeApplet) then
     FVolumeApplet.Tick();
+  if Assigned(FBatteryApplet) then
+    FBatteryApplet.Tick();
+  if Assigned(FBluetoothApplet) then
+    FBluetoothApplet.Tick();
+  if Assigned(FWiredApplet) then
+    FWiredApplet.Tick();
+  if Assigned(FLanApplet) then
+    FLanApplet.Tick();
 
   // If tracking mode is active, monitor whether the active popup was closed externally
   if FTrackingActive then
@@ -658,6 +852,18 @@ begin
           DismissAllApplets();
       pakSession:
         if Assigned(FSessionApplet) and not FSessionApplet.IsPopupOpen() then
+          DismissAllApplets();
+      pakBattery:
+        if Assigned(FBatteryApplet) and not FBatteryApplet.IsPopupOpen() then
+          DismissAllApplets();
+      pakBluetooth:
+        if Assigned(FBluetoothApplet) and not FBluetoothApplet.IsPopupOpen() then
+          DismissAllApplets();
+      pakWired:
+        if Assigned(FWiredApplet) and not FWiredApplet.IsPopupOpen() then
+          DismissAllApplets();
+      pakLan:
+        if Assigned(FLanApplet) and not FLanApplet.IsPopupOpen() then
           DismissAllApplets();
     end;
   end;

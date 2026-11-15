@@ -114,10 +114,39 @@ begin
   AssertNotNull('Volume applet button must be created', FPanel.VolumeApplet.Button);
   AssertTrue('Volume applet button must be flat (borderless when idle)', FPanel.VolumeApplet.Button.Flat);
 
-  // 6. Session applet (shutdown button)
+  // 6. Battery applet
+  AssertNotNull('Battery applet must be created', FPanel.BatteryApplet);
+  AssertNotNull('Battery applet button must be created', FPanel.BatteryApplet.Button);
+  AssertTrue('Battery applet button must be flat (borderless when idle)', FPanel.BatteryApplet.Button.Flat);
+
+  // 7. Bluetooth applet
+  AssertNotNull('Bluetooth applet must be created', FPanel.BluetoothApplet);
+  AssertNotNull('Bluetooth applet button must be created', FPanel.BluetoothApplet.Button);
+  AssertTrue('Bluetooth applet button must be flat (borderless when idle)', FPanel.BluetoothApplet.Button.Flat);
+
+  // 8. Wired applet
+  AssertNotNull('Wired applet must be created', FPanel.WiredApplet);
+  AssertNotNull('Wired applet button must be created', FPanel.WiredApplet.Button);
+  AssertTrue('Wired applet button must be flat (borderless when idle)', FPanel.WiredApplet.Button.Flat);
+
+  // 9. LAN applet
+  AssertNotNull('LAN applet must be created', FPanel.LanApplet);
+  AssertNotNull('LAN applet button must be created', FPanel.LanApplet.Button);
+  AssertTrue('LAN applet button must be flat (borderless when idle)', FPanel.LanApplet.Button.Flat);
+
+  // 10. Session applet (shutdown button)
   AssertNotNull('Session applet must be created', FPanel.SessionApplet);
   AssertNotNull('Session applet button must be created', FPanel.SessionApplet.Button);
   AssertTrue('Session applet button must be flat (borderless when idle)', FPanel.SessionApplet.Button.Flat);
+
+  // Verify left-to-right ordering of right-docked elements
+  AssertTrue('ShowDesktop rightmost', FPanel.ShowDesktopWidget.X > FPanel.SessionApplet.Button.X);
+  AssertTrue('Session right of Clock', FPanel.SessionApplet.Button.X > FPanel.ClockApplet.Button.X);
+  AssertTrue('Clock right of Volume', FPanel.ClockApplet.Button.X > FPanel.VolumeApplet.Button.X);
+  AssertTrue('Volume right of Battery', FPanel.VolumeApplet.Button.X > FPanel.BatteryApplet.Button.X);
+  AssertTrue('Battery right of Bluetooth', FPanel.BatteryApplet.Button.X > FPanel.BluetoothApplet.Button.X);
+  AssertTrue('Bluetooth right of Wired', FPanel.BluetoothApplet.Button.X > FPanel.WiredApplet.Button.X);
+  AssertTrue('Wired right of LAN', FPanel.WiredApplet.Button.X > FPanel.LanApplet.Button.X);
 end;
 
 procedure TTopPanelTest.TestPanelVisibilityToggle();
@@ -185,17 +214,49 @@ begin
   AssertTrue('Tracking should be active after volume button click', FPanel.TrackingActive);
   AssertEquals('Active applet should be pakVolume', Ord(pakVolume), Ord(FPanel.ActiveApplet));
   AssertTrue('Volume popup should be open', FPanel.VolumeApplet.IsPopupOpen());
-  AssertFalse('Clock popup should be closed', FPanel.ClockApplet.IsPopupOpen());
+  AssertFalse('Battery popup should be closed', FPanel.BatteryApplet.IsPopupOpen());
 
-  // 3. Hovering over Clock button while tracking is active -> switches to Clock applet
+  // 3. Hovering over Battery button while tracking is active -> switches to Battery applet
+  if Assigned(FPanel.BatteryApplet.Button.OnHover) then
+    FPanel.BatteryApplet.Button.OnHover(FPanel.BatteryApplet.Button, True);
+  AssertTrue('Tracking remains active after switching to battery', FPanel.TrackingActive);
+  AssertEquals('Active applet should switch to pakBattery', Ord(pakBattery), Ord(FPanel.ActiveApplet));
+  AssertFalse('Volume popup should be closed after switch', FPanel.VolumeApplet.IsPopupOpen());
+  AssertTrue('Battery popup should be open after switch', FPanel.BatteryApplet.IsPopupOpen());
+
+  // 4. Hovering over Bluetooth button while tracking is active -> switches to Bluetooth applet
+  if Assigned(FPanel.BluetoothApplet.Button.OnHover) then
+    FPanel.BluetoothApplet.Button.OnHover(FPanel.BluetoothApplet.Button, True);
+  AssertTrue('Tracking remains active after switching to bluetooth', FPanel.TrackingActive);
+  AssertEquals('Active applet should switch to pakBluetooth', Ord(pakBluetooth), Ord(FPanel.ActiveApplet));
+  AssertFalse('Battery popup should be closed after switch', FPanel.BatteryApplet.IsPopupOpen());
+  AssertTrue('Bluetooth popup should be open after switch', FPanel.BluetoothApplet.IsPopupOpen());
+
+  // 5. Hovering over Wired button while tracking is active -> switches to Wired applet
+  if Assigned(FPanel.WiredApplet.Button.OnHover) then
+    FPanel.WiredApplet.Button.OnHover(FPanel.WiredApplet.Button, True);
+  AssertTrue('Tracking remains active after switching to wired', FPanel.TrackingActive);
+  AssertEquals('Active applet should switch to pakWired', Ord(pakWired), Ord(FPanel.ActiveApplet));
+  AssertFalse('Bluetooth popup should be closed after switch', FPanel.BluetoothApplet.IsPopupOpen());
+  AssertTrue('Wired popup should be open after switch', FPanel.WiredApplet.IsPopupOpen());
+
+  // 6. Hovering over LAN button while tracking is active -> switches to LAN applet
+  if Assigned(FPanel.LanApplet.Button.OnHover) then
+    FPanel.LanApplet.Button.OnHover(FPanel.LanApplet.Button, True);
+  AssertTrue('Tracking remains active after switching to LAN', FPanel.TrackingActive);
+  AssertEquals('Active applet should switch to pakLan', Ord(pakLan), Ord(FPanel.ActiveApplet));
+  AssertFalse('Wired popup should be closed after switch', FPanel.WiredApplet.IsPopupOpen());
+  AssertTrue('LAN popup should be open after switch', FPanel.LanApplet.IsPopupOpen());
+
+  // 7. Hovering over Clock button while tracking is active -> switches to Clock applet
   if Assigned(FPanel.ClockApplet.Button.OnHover) then
     FPanel.ClockApplet.Button.OnHover(FPanel.ClockApplet.Button, True);
   AssertTrue('Tracking remains active after switching to clock', FPanel.TrackingActive);
   AssertEquals('Active applet should switch to pakClock', Ord(pakClock), Ord(FPanel.ActiveApplet));
-  AssertFalse('Volume popup should be closed after switch', FPanel.VolumeApplet.IsPopupOpen());
+  AssertFalse('LAN popup should be closed after switch', FPanel.LanApplet.IsPopupOpen());
   AssertTrue('Clock popup should be open after switch', FPanel.ClockApplet.IsPopupOpen());
 
-  // 4. Hovering over Session button while tracking is active -> switches to Session applet
+  // 8. Hovering over Session button while tracking is active -> switches to Session applet
   if Assigned(FPanel.SessionApplet.Button.OnHover) then
     FPanel.SessionApplet.Button.OnHover(FPanel.SessionApplet.Button, True);
   AssertTrue('Tracking remains active after switching to session', FPanel.TrackingActive);
@@ -203,13 +264,13 @@ begin
   AssertFalse('Clock popup should be closed after switch', FPanel.ClockApplet.IsPopupOpen());
   AssertTrue('Session popup should be open after switch', FPanel.SessionApplet.IsPopupOpen());
 
-  // 5. Hovering over Show Desktop button does NOT switch applets
+  // 9. Hovering over Show Desktop button does NOT switch applets
   if Assigned(FPanel.ShowDesktopWidget.OnHover) then
     FPanel.ShowDesktopWidget.OnHover(FPanel.ShowDesktopWidget, True);
   AssertEquals('Active applet remains pakSession after hovering show desktop', Ord(pakSession), Ord(FPanel.ActiveApplet));
   AssertTrue('Session popup remains open', FPanel.SessionApplet.IsPopupOpen());
 
-  // 6. Click active button (Session) -> dismisses applets and ends tracking
+  // 10. Click active button (Session) -> dismisses applets and ends tracking
   if Assigned(FPanel.SessionApplet.Button.OnClick) then
     FPanel.SessionApplet.Button.OnClick(FPanel.SessionApplet.Button);
   AssertFalse('Tracking should end after clicking active button', FPanel.TrackingActive);
@@ -245,12 +306,40 @@ begin
   AssertTrue('Light volume SVG stroke must be #2c3e50', Pos('#2c3e50', LowerCase(svgLight)) > 0);
   AssertTrue('Dark volume SVG stroke must be #f0f2f5', Pos('#f0f2f5', LowerCase(svgDark)) > 0);
 
-  // 5. Panel style switching
+  // 5. Battery SVG resolution
+  svgLight := GetBatteryIconSVG(85, False, True, False);
+  svgDark  := GetBatteryIconSVG(85, False, True, True);
+  AssertTrue('Light battery SVG stroke must be #2c3e50', Pos('#2c3e50', LowerCase(svgLight)) > 0);
+  AssertTrue('Dark battery SVG stroke must be #f0f2f5', Pos('#f0f2f5', LowerCase(svgDark)) > 0);
+
+  // 6. Wired SVG resolution
+  svgLight := GetWiredIconSVG(True, False);
+  svgDark  := GetWiredIconSVG(True, True);
+  AssertTrue('Light wired SVG stroke must be #2c3e50', Pos('#2c3e50', LowerCase(svgLight)) > 0);
+  AssertTrue('Dark wired SVG stroke must be #f0f2f5', Pos('#f0f2f5', LowerCase(svgDark)) > 0);
+
+  // 7. LAN SVG resolution
+  svgLight := GetLanIconSVG(True, 80, True, False);
+  svgDark  := GetLanIconSVG(True, 80, True, True);
+  AssertTrue('Light LAN SVG stroke must be #2c3e50', Pos('#2c3e50', LowerCase(svgLight)) > 0);
+  AssertTrue('Dark LAN SVG stroke must be #f0f2f5', Pos('#f0f2f5', LowerCase(svgDark)) > 0);
+
+  // 8. Bluetooth SVG resolution
+  svgLight := GetBluetoothIconSVG(True, True, False);
+  svgDark  := GetBluetoothIconSVG(True, True, True);
+  AssertTrue('Light bluetooth SVG stroke must be #2c3e50', Pos('#2c3e50', LowerCase(svgLight)) > 0);
+  AssertTrue('Dark bluetooth SVG stroke must be #f0f2f5', Pos('#f0f2f5', LowerCase(svgDark)) > 0);
+
+  // 9. Panel style switching
   FtApp().DarkMode := False;
   FPanel.ApplyThemeStyle();
   AssertNotNull('Launcher button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.LauncherWidget.Handle));
   AssertNotNull('Desktop button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.ShowDesktopWidget.Handle));
   AssertNotNull('Volume button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.VolumeApplet.Button.Handle));
+  AssertNotNull('Battery button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.BatteryApplet.Button.Handle));
+  AssertNotNull('Bluetooth button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.BluetoothApplet.Button.Handle));
+  AssertNotNull('Wired button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.WiredApplet.Button.Handle));
+  AssertNotNull('LAN button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.LanApplet.Button.Handle));
   AssertNotNull('Session button icon must be loaded in light mode', ft_button_get_icon_bitmap(FPanel.SessionApplet.Button.Handle));
 
   FtApp().DarkMode := True;
@@ -258,6 +347,10 @@ begin
   AssertNotNull('Launcher button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.LauncherWidget.Handle));
   AssertNotNull('Desktop button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.ShowDesktopWidget.Handle));
   AssertNotNull('Volume button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.VolumeApplet.Button.Handle));
+  AssertNotNull('Battery button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.BatteryApplet.Button.Handle));
+  AssertNotNull('Bluetooth button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.BluetoothApplet.Button.Handle));
+  AssertNotNull('Wired button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.WiredApplet.Button.Handle));
+  AssertNotNull('LAN button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.LanApplet.Button.Handle));
   AssertNotNull('Session button icon must be loaded in dark mode', ft_button_get_icon_bitmap(FPanel.SessionApplet.Button.Handle));
 end;
 
