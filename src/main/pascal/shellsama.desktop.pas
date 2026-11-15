@@ -362,10 +362,15 @@ begin
   begin
     try
       newBmp := TFtBitmap.CreateFromFile(APath);
-      if Assigned(FWallpaperBitmap) then
-        FWallpaperBitmap.Free();
-      FWallpaperBitmap := newBmp;
-      FWallpaperPath := APath;
+      if (newBmp <> nil) and (newBmp.Handle <> nil) then
+      begin
+        if Assigned(FWallpaperBitmap) then
+          FWallpaperBitmap.Free();
+        FWallpaperBitmap := newBmp;
+        FWallpaperPath := APath;
+      end
+      else if newBmp <> nil then
+        newBmp.Free();
     except
       on E: Exception do
       begin
