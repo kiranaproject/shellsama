@@ -44,6 +44,7 @@ type
     procedure TestDockDynamicMargin();
     procedure TestDockAutoHideStruts();
     procedure TestDockIntellihideAnimation();
+    procedure TestDockDirectLeftToRightTransition();
   end;
 
 type
@@ -66,6 +67,7 @@ begin
       Fail('FtApp.Initialize failed: ' + E.Message);
   end;
 
+  FtApp().DarkMode := True;
   ShellSettings().SetDefaults();
   FLauncher := TShellLauncher.Create();
   FDock := TShellDock.Create(FLauncher);
@@ -708,6 +710,42 @@ begin
   // Settle back to visible
   FDock.ShowImmediate();
   AssertEquals('Dock settled back to visible', Ord(dhsVisible), Ord(FDock.HideState));
+end;
+
+procedure TDockTest.TestDockDirectLeftToRightTransition();
+var
+  sw: Integer;
+begin
+  sw := FtApp().ScreenWidth;
+
+  // 1. Position on Left
+  ShellSettings().DockPosition := 'Left';
+  ShellSettings().DockMargin := 3;
+  FDock.RefreshDock();
+
+  AssertTrue('Dock is vertical on left', FDock.IsVertical());
+  AssertEquals('Dock PanelX is margin 3', 3, FDock.PanelX());
+  AssertEquals('Dock window X is on left', 3, FDock.WindowWidget.X);
+  AssertTrue('Left strut active', FDock.ComputeStrutLeft() > 0);
+  AssertEquals('Right strut is 0', 0, FDock.ComputeStrutRight());
+
+  // 2. Direct transition from Left to Right (without going through Bottom)
+  ShellSettings().DockPosition := 'Right';
+  FDock.RefreshDock();
+
+  AssertTrue('Dock is vertical on right', FDock.IsVertical());
+  AssertEquals('Dock PanelX is on right', sw - FDock.PanelWidth() - 3, FDock.PanelX());
+  AssertEquals('Dock window X updated to right edge', sw - FDock.PanelWidth() - 3, FDock.WindowWidget.X);
+  AssertEquals('Left strut is 0', 0, FDock.ComputeStrutLeft());
+  AssertTrue('Right strut active', FDock.ComputeStrutRight() > 0);
+
+  // 3. Direct transition from Right back to Left
+  ShellSettings().DockPosition := 'Left';
+  FDock.RefreshDock();
+
+  AssertEquals('Dock window X moved back to left edge', 3, FDock.WindowWidget.X);
+  AssertTrue('Left strut active again', FDock.ComputeStrutLeft() > 0);
+  AssertEquals('Right strut is 0 again', 0, FDock.ComputeStrutRight());
 end;
 
 initialization

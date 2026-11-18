@@ -163,6 +163,7 @@ type
     procedure ShowImmediate();
 
     procedure RefreshDock();
+    procedure ResizeWindow(AWidth, AHeight: Integer; AX: Integer = 0); override;
     procedure Tick(); override;
 
     function EntryCount(): Integer;
@@ -858,8 +859,10 @@ end;
 procedure TShellDock.HandleSettingsDockChange(Sender: TObject);
 var
   needRelayout: Boolean;
+  posOrMarginChanged: Boolean;
 begin
   needRelayout := False;
+  posOrMarginChanged := False;
 
   if (ShellSettings().DockIconSize >= 24) and (ShellSettings().DockIconSize <= 128) then
   begin
@@ -874,21 +877,37 @@ begin
   begin
     FLastDockPosition := ShellSettings().DockPosition;
     needRelayout := True;
+    posOrMarginChanged := True;
   end;
 
   if FLastDockMargin <> ShellSettings().DockMargin then
   begin
     FLastDockMargin := ShellSettings().DockMargin;
     needRelayout := True;
+    posOrMarginChanged := True;
   end;
 
   if FLastDockAutoHide <> ShellSettings().DockAutoHide then
   begin
     FLastDockAutoHide := ShellSettings().DockAutoHide;
+    posOrMarginChanged := True;
+  end;
+
+  if posOrMarginChanged then
+  begin
     UpdateStruts();
     SetupTriggerWindow();
-    if not FLastDockAutoHide then
-      ShowImmediate();
+    if not ShellSettings().DockAutoHide or (FHideState in [dhsVisible, dhsShowing]) then
+      ShowImmediate()
+    else if FHideState = dhsHidden then
+    begin
+      if SameText(ShellSettings().DockPosition, 'Left') then
+        FWindow.SetPosition(-PanelWidth(), PanelY())
+      else if SameText(ShellSettings().DockPosition, 'Right') then
+        FWindow.SetPosition(ScreenWidthHint(), PanelY())
+      else
+        FWindow.SetPosition(PanelX(), ScreenHeightHint());
+    end;
   end;
 
   if needRelayout then
@@ -1250,6 +1269,12 @@ end;
 
 // ---------------------------------------------------------------- layout
 
+procedure TShellDock.ResizeWindow(AWidth, AHeight: Integer; AX: Integer = 0);
+begin
+  inherited ResizeWindow(AWidth, AHeight, AX);
+  SetupTriggerWindow();
+end;
+
 procedure TShellDock.LayoutButtons();
 var
   i, k, iconX, iconY, x, y, wantW, wantH, btnSize, gap, total: Integer;
@@ -1266,7 +1291,9 @@ begin
   // make every maximized client flash.
   wantW := DesiredWidth();
   wantH := DesiredHeight();
-  if (wantW <> FPanelWidth) or (wantH <> FPanelHeight) then
+  if (wantW <> FPanelWidth) or (wantH <> FPanelHeight) or
+     (((FHideState = dhsVisible) or not ShellSettings().DockAutoHide) and
+      ((FWindow.X <> PanelX()) or (FWindow.Y <> PanelY()))) then
     ResizeWindow(wantW, wantH, PanelX());
 
   if Length(FEntries) = 0 then

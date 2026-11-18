@@ -148,7 +148,7 @@ type
   public
     // Resize and reposition without destroying the window. Recreating it would drop
     // its strut and make every maximized client flash until the new one mapped.
-    procedure ResizeWindow(AWidth, AHeight: Integer; AX: Integer = 0);
+    procedure ResizeWindow(AWidth, AHeight: Integer; AX: Integer = 0); virtual;
 
     // AWidth/AHeight of 0 mean "the taskbar's own geometry". A dock passes its own,
     // because the toolkit fixes a window's size at creation and offers no resize.
