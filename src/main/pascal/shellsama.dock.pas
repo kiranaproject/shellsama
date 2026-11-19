@@ -52,6 +52,7 @@ type
     IsActive : Boolean;            // one of its windows is focused
     Button   : TFtButton;
     Menu     : TFtPopupMenu;
+    MenuNewWindow: TFtMenuItem;
     MenuPin  : TFtMenuItem;
     MenuMinimize: TFtMenuItem;
     MenuMaximize: TFtMenuItem;
@@ -109,6 +110,7 @@ type
     function DotWidth(): Double;
     function IndexOfKey(const AAppKey: string): Integer;
     procedure HandleEntryClick(Sender: TFtButton);
+    procedure HandleEntryMenuNewWindow(Sender: TFtMenuItem);
     procedure HandleEntryMenuPin(Sender: TFtMenuItem);
     procedure UpdateEntryMenu(AIndex: Integer);
     procedure UpdateEntryMenuStates();
@@ -199,6 +201,7 @@ type
     procedure DebugClickEntry(AIndex: Integer);
     // Sets window list for a synthetic entry. Test use only.
     procedure DebugSetEntryWindows(AIndex: Integer; const AWins: array of Cardinal);
+    procedure DebugSetEntryAppKey(AIndex: Integer; const AAppKey, ATitle: string);
     function EntryMenu(AIndex: Integer): TFtPopupMenu;
 
     property IconSize     : Integer        read FIconSize;
@@ -972,6 +975,7 @@ begin
     FEntries[i].Title := 'Test ' + IntToStr(i);
     FEntries[i].Button := nil;
     FEntries[i].Menu := nil;
+    FEntries[i].MenuNewWindow := nil;
     FEntries[i].MenuPin := nil;
     FEntries[i].MenuMinimize := nil;
     FEntries[i].MenuMaximize := nil;
@@ -995,6 +999,14 @@ begin
   SetLength(FEntries[AIndex].Windows, Length(AWins));
   for i := 0 to High(AWins) do
     FEntries[AIndex].Windows[i] := AWins[i];
+  UpdateEntryMenu(AIndex);
+end;
+
+procedure TShellDock.DebugSetEntryAppKey(AIndex: Integer; const AAppKey, ATitle: string);
+begin
+  if (AIndex < 0) or (AIndex >= Length(FEntries)) then Exit;
+  FEntries[AIndex].AppKey := AAppKey;
+  FEntries[AIndex].Title := ATitle;
   UpdateEntryMenu(AIndex);
 end;
 
@@ -1096,6 +1108,7 @@ begin
     FEntries[j].IsActive := False;
     FEntries[j].Button := nil;
     FEntries[j].Menu := nil;
+    FEntries[j].MenuNewWindow := nil;
     FEntries[j].MenuPin := nil;
     FEntries[j].MenuMinimize := nil;
     FEntries[j].MenuMaximize := nil;
@@ -1126,6 +1139,7 @@ begin
       FEntries[j].Windows := nil;
       FEntries[j].Button := nil;
       FEntries[j].Menu := nil;
+      FEntries[j].MenuNewWindow := nil;
       FEntries[j].MenuPin := nil;
       FEntries[j].MenuMinimize := nil;
       FEntries[j].MenuMaximize := nil;
@@ -1707,6 +1721,9 @@ begin
     // If already built for this window, update dynamic captions
     if (FEntries[AIndex].MenuWindow = win) and (FEntries[AIndex].MenuMinimize <> nil) then
     begin
+      if Assigned(FEntries[AIndex].MenuNewWindow) then
+        FEntries[AIndex].MenuNewWindow.Tag := AIndex;
+
       if IsWindowMinimized(win) then
         FEntries[AIndex].MenuMinimize.Caption := 'Restore'
       else
@@ -1731,8 +1748,17 @@ begin
     end
     else
     begin
-      // Full rebuild for single window: Minimize, Maximize, separator, Close, separator, Pin/Unpin
+      // Full rebuild for single window: New Window, separator, Minimize, Maximize, separator, Close, separator, Pin/Unpin
       FEntries[AIndex].Menu.Clear();
+      FEntries[AIndex].MenuNewWindow := nil;
+
+      if hasDesktop then
+      begin
+        FEntries[AIndex].MenuNewWindow := FEntries[AIndex].Menu.AddItem('New Window', @HandleEntryMenuNewWindow);
+        if Assigned(FEntries[AIndex].MenuNewWindow) then
+          FEntries[AIndex].MenuNewWindow.Tag := AIndex;
+        FEntries[AIndex].Menu.AddSeparator();
+      end;
 
       AddWindowActions(FEntries[AIndex].Menu, win);
 
@@ -1765,9 +1791,11 @@ begin
   else
   begin
     // 0 or >1 windows: no window-specific actions on dock icon
-    if (FEntries[AIndex].MenuWindow <> 0) or (FEntries[AIndex].MenuMinimize <> nil) then
+    if (FEntries[AIndex].MenuWindow <> 0) or (FEntries[AIndex].MenuMinimize <> nil) or
+       (hasDesktop and (FEntries[AIndex].MenuNewWindow = nil)) then
     begin
       FEntries[AIndex].Menu.Clear();
+      FEntries[AIndex].MenuNewWindow := nil;
       FEntries[AIndex].MenuMinimize := nil;
       FEntries[AIndex].MenuMaximize := nil;
       FEntries[AIndex].MenuClose := nil;
@@ -1775,6 +1803,11 @@ begin
 
       if hasDesktop then
       begin
+        FEntries[AIndex].MenuNewWindow := FEntries[AIndex].Menu.AddItem('New Window', @HandleEntryMenuNewWindow);
+        if Assigned(FEntries[AIndex].MenuNewWindow) then
+          FEntries[AIndex].MenuNewWindow.Tag := AIndex;
+        FEntries[AIndex].Menu.AddSeparator();
+
         if FEntries[AIndex].Pinned then
           FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Unpin from dock', @HandleEntryMenuPin)
         else
@@ -1785,22 +1818,34 @@ begin
 
       FEntries[AIndex].MenuWindow := 0;
     end
-    else if Assigned(FEntries[AIndex].MenuPin) then
+    else
     begin
-      FEntries[AIndex].MenuPin.Tag := AIndex;
-      if FEntries[AIndex].Pinned and hasDesktop then
-        FEntries[AIndex].MenuPin.Caption := 'Unpin from dock'
-      else if hasDesktop then
-        FEntries[AIndex].MenuPin.Caption := 'Pin to dock';
-    end
-    else if hasDesktop then
-    begin
-      if FEntries[AIndex].Pinned then
-        FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Unpin from dock', @HandleEntryMenuPin)
-      else
-        FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Pin to dock', @HandleEntryMenuPin);
+      if Assigned(FEntries[AIndex].MenuNewWindow) then
+        FEntries[AIndex].MenuNewWindow.Tag := AIndex;
+
       if Assigned(FEntries[AIndex].MenuPin) then
+      begin
         FEntries[AIndex].MenuPin.Tag := AIndex;
+        if FEntries[AIndex].Pinned and hasDesktop then
+          FEntries[AIndex].MenuPin.Caption := 'Unpin from dock'
+        else if hasDesktop then
+          FEntries[AIndex].MenuPin.Caption := 'Pin to dock';
+      end
+      else if hasDesktop then
+      begin
+        FEntries[AIndex].Menu.Clear();
+        FEntries[AIndex].MenuNewWindow := FEntries[AIndex].Menu.AddItem('New Window', @HandleEntryMenuNewWindow);
+        if Assigned(FEntries[AIndex].MenuNewWindow) then
+          FEntries[AIndex].MenuNewWindow.Tag := AIndex;
+        FEntries[AIndex].Menu.AddSeparator();
+
+        if FEntries[AIndex].Pinned then
+          FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Unpin from dock', @HandleEntryMenuPin)
+        else
+          FEntries[AIndex].MenuPin := FEntries[AIndex].Menu.AddItem('Pin to dock', @HandleEntryMenuPin);
+        if Assigned(FEntries[AIndex].MenuPin) then
+          FEntries[AIndex].MenuPin.Tag := AIndex;
+      end;
     end;
   end;
 
@@ -1814,6 +1859,17 @@ var
 begin
   for i := 0 to High(FEntries) do
     UpdateEntryMenu(i);
+end;
+
+procedure TShellDock.HandleEntryMenuNewWindow(Sender: TFtMenuItem);
+var
+  idx: Integer;
+begin
+  if Sender = nil then Exit;
+  idx := Sender.Tag;
+  if (idx < 0) or (idx >= Length(FEntries)) then Exit;
+
+  FDockApps.Launch(FEntries[idx].AppKey);
 end;
 
 procedure TShellDock.HandleEntryMenuPin(Sender: TFtMenuItem);

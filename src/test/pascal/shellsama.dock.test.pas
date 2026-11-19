@@ -39,6 +39,7 @@ type
     procedure TestDockFollowsDarkAndLightTheme();
     procedure TestSingleWindowClickMinimizesWhenActive();
     procedure TestDockEntryMenuForSingleWindowOffersWindowActions();
+    procedure TestDockEntryMenuOffersNewWindowForDesktopApp();
     procedure TestDockLeftPositionGeometry();
     procedure TestDockRightPositionGeometry();
     procedure TestDockDynamicMargin();
@@ -607,6 +608,66 @@ begin
         captions.Add(item.Caption);
     end;
     AssertTrue('Window actions restored for single window: ' + captions.CommaText, captions.IndexOf('Minimize') >= 0);
+  finally
+    captions.Free();
+  end;
+end;
+
+procedure TDockTest.TestDockEntryMenuOffersNewWindowForDesktopApp();
+var
+  menu: TFtPopupMenu;
+  i: Integer;
+  captions: TStringList;
+  item: TFtMenuItem;
+begin
+  AssertNotNull('Dock instance', FDock);
+  FDock.DebugPopulateEntries(1);
+
+  // Set Entry 0 to 'consolesama' (which has a desktop entry)
+  FDock.DebugSetEntryAppKey(0, 'consolesama', 'Console');
+
+  menu := FDock.EntryMenu(0);
+  AssertNotNull('Entry menu exists', menu);
+  captions := TStringList.Create();
+  try
+    // 1. Zero windows: offers New Window
+    for i := 0 to menu.ItemCount - 1 do
+    begin
+      item := menu.Items[i];
+      if (item <> nil) and (item.Caption <> '') and (item.Caption <> '-') then
+        captions.Add(item.Caption);
+    end;
+    AssertTrue('Zero windows offers New Window: ' + captions.CommaText, captions.IndexOf('New Window') >= 0);
+    AssertEquals('Zero windows has no Minimize', -1, captions.IndexOf('Minimize'));
+
+    // 2. Single window: New Window is present and before window actions
+    FDock.DebugSetEntryWindows(0, [1001]);
+    menu := FDock.EntryMenu(0);
+    captions.Clear();
+    for i := 0 to menu.ItemCount - 1 do
+    begin
+      item := menu.Items[i];
+      if (item <> nil) and (item.Caption <> '') and (item.Caption <> '-') then
+        captions.Add(item.Caption);
+    end;
+    AssertTrue('Single window offers New Window: ' + captions.CommaText, captions.IndexOf('New Window') >= 0);
+    AssertTrue('Single window offers Minimize: ' + captions.CommaText, captions.IndexOf('Minimize') >= 0);
+    AssertTrue('New Window is before Minimize', captions.IndexOf('New Window') < captions.IndexOf('Minimize'));
+
+    // 3. Multiple windows: offers New Window, no Minimize/Maximize/Close
+    FDock.DebugSetEntryWindows(0, [1001, 1002]);
+    menu := FDock.EntryMenu(0);
+    captions.Clear();
+    for i := 0 to menu.ItemCount - 1 do
+    begin
+      item := menu.Items[i];
+      if (item <> nil) and (item.Caption <> '') and (item.Caption <> '-') then
+        captions.Add(item.Caption);
+    end;
+    AssertTrue('Multiple windows offers New Window: ' + captions.CommaText, captions.IndexOf('New Window') >= 0);
+    AssertEquals('Multiple windows has no Minimize', -1, captions.IndexOf('Minimize'));
+    AssertEquals('Multiple windows has no Maximize', -1, captions.IndexOf('Maximize'));
+    AssertEquals('Multiple windows has no Close', -1, captions.IndexOf('Close'));
   finally
     captions.Free();
   end;
