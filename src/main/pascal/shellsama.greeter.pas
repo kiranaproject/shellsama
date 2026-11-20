@@ -499,6 +499,7 @@ var
   errMsg: string;
   ok: Boolean;
   sessKey: string;
+  sessionFile: TStringList;
 begin
   if FAuthBusy then Exit;
   if FPasswordEntry = nil then Exit;
@@ -542,7 +543,24 @@ begin
         end
         else
         begin
-          LaunchSession(sessKey);
+          // Notify dmsama of successful authentication
+          try
+            sessionFile := TStringList.Create();
+            try
+              sessionFile.Values['user'] := FUserName;
+              sessionFile.Values['session'] := sessKey;
+              if DirectoryExists('/var/run/dmsama') then
+                sessionFile.SaveToFile('/var/run/dmsama/session.target')
+              else if DirectoryExists('/tmp') then
+                sessionFile.SaveToFile('/tmp/dmsama-session.target');
+            finally
+              sessionFile.Free();
+            end;
+          except
+            // Fallback to direct launch if file notification fails
+            LaunchSession(sessKey);
+          end;
+
           Unlock();
           Exit;
         end;

@@ -280,7 +280,9 @@ end;
 
 function TPamAuthenticator.Authenticate(const AUsername, APassword: string; out AErrorMsg: string): Boolean;
 begin
-  Result := Authenticate(AUsername, APassword, 'mate-screensaver', AErrorMsg);
+  Result := Authenticate(AUsername, APassword, 'dmsama', AErrorMsg);
+  if not Result then
+    Result := Authenticate(AUsername, APassword, 'mate-screensaver', AErrorMsg);
   if not Result and (Pos('Service', AErrorMsg) > 0) then
     Result := Authenticate(AUsername, APassword, 'other', AErrorMsg);
 end;
