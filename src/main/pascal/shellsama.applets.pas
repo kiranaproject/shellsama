@@ -135,7 +135,7 @@ type
     procedure HandleRestart(Sender: TFtMenuItem);
     procedure HandleShutDown(Sender: TFtMenuItem);
   public
-    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+    constructor Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer; AGreeterMode: Boolean = False);
     destructor Destroy(); override;
 
     procedure SetBounds(AX, AY, AW, AH: Integer);
@@ -1124,10 +1124,10 @@ begin
   if Assigned(FButton) and Assigned(FPanelWindow) then
   begin
     popX := Max(10, FButton.X - (popW - FButton.Width) div 2);
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
   end
   else
   begin
@@ -1542,10 +1542,10 @@ begin
   begin
     popX := FButton.X + (FButton.Width - popW) div 2;
     popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
   end
   else
   begin
@@ -1687,10 +1687,10 @@ begin
     popH := FPopupWindow.Height;
     popX := FButton.X + (FButton.Width - popW) div 2;
     popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
     FPopupWindow.SetPosition(popX, popY);
   end;
 
@@ -1740,7 +1740,7 @@ end;
 // TShellSessionApplet Implementation
 // =============================================================================
 
-constructor TShellSessionApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer);
+constructor TShellSessionApplet.Create(AParentWindow: TFtWindow; AX, AY, AW, AH: Integer; AGreeterMode: Boolean = False);
 begin
   inherited Create();
   FPanelWindow := AParentWindow;
@@ -1756,14 +1756,24 @@ begin
   FButton.OnClick := @HandleButtonClick;
 
   FMenu := TFtPopupMenu.Create(FPanelWindow);
-  FMenu.AddItem('System Settings...', @HandleSettings);
-  FMenu.AddSeparator();
-  FMenu.AddItem('Lock Screen', @HandleLockScreen);
-  FMenu.AddItem('Suspend', @HandleSuspend);
-  FMenu.AddItem('Log Out...', @HandleLogOut);
-  FMenu.AddSeparator();
-  FMenu.AddItem('Restart...', @HandleRestart);
-  FMenu.AddItem('Shut Down...', @HandleShutDown);
+  if not AGreeterMode then
+  begin
+    FMenu.AddItem('System Settings...', @HandleSettings);
+    FMenu.AddSeparator();
+    FMenu.AddItem('Lock Screen', @HandleLockScreen);
+    FMenu.AddItem('Suspend', @HandleSuspend);
+    FMenu.AddItem('Log Out...', @HandleLogOut);
+    FMenu.AddSeparator();
+    FMenu.AddItem('Restart...', @HandleRestart);
+    FMenu.AddItem('Shut Down...', @HandleShutDown);
+  end
+  else
+  begin
+    FMenu.AddItem('Sleep', @HandleSuspend);
+    FMenu.AddSeparator();
+    FMenu.AddItem('Restart...', @HandleRestart);
+    FMenu.AddItem('Shut Down...', @HandleShutDown);
+  end;
 end;
 
 destructor TShellSessionApplet.Destroy();
@@ -1809,10 +1819,10 @@ begin
   if Assigned(FButton) and Assigned(FPanelWindow) then
   begin
     menuX := Max(10, FButton.X - 120);
-    if FPanelWindow.Y < 100 then
-      menuY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      menuY := FButton.Y + FButton.Height + 4
     else
-      menuY := FPanelWindow.Y - 170;
+      menuY := FButton.Y - 170;
   end
   else
   begin
@@ -2142,10 +2152,10 @@ begin
   begin
     popX := FButton.X + (FButton.Width - popW) div 2;
     popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
   end
   else
   begin
@@ -2515,10 +2525,10 @@ begin
   begin
     popX := FButton.X + (FButton.Width - popW) div 2;
     popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
   end
   else
   begin
@@ -2902,10 +2912,10 @@ begin
   begin
     popX := FButton.X + (FButton.Width - popW) div 2;
     popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
   end
   else
   begin
@@ -3295,10 +3305,10 @@ begin
   begin
     popX := FButton.X + (FButton.Width - popW) div 2;
     popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
   end
   else
   begin
@@ -3764,10 +3774,10 @@ begin
   begin
     popX := FButton.X + (FButton.Width - popW) div 2;
     popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
   end
   else
   begin
@@ -4261,10 +4271,10 @@ begin
   begin
     popX := FButton.X + (FButton.Width - popW) div 2;
     popX := Max(10, Min(popX, FPanelWindow.Width - popW - 10));
-    if FPanelWindow.Y < 100 then
-      popY := FPanelWindow.Y + FPanelWindow.Height + 4
+    if FButton.Y < (FPanelWindow.Height div 2) then
+      popY := FButton.Y + FButton.Height + 4
     else
-      popY := FPanelWindow.Y - popH - 4;
+      popY := FButton.Y - popH - 4;
   end
   else
   begin

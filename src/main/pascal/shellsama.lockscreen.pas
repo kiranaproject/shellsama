@@ -15,7 +15,7 @@ uses
   Floria.XCB, Floria.XCB.Keysyms, Floria.X11.KeySym,
   ftpas.api, ftpas.types, ftpas, ftpas.controls, ftpas.creative, ftpas.canvas,
   ftpas.font, ftpas.widget,
-  ShellSama.Settings, ShellSama.PAM;
+  ShellSama.Settings, ShellSama.PAM, ShellSama.Applets;
 
 const
   LOCK_CARD_WIDTH    = 380;
@@ -33,9 +33,11 @@ type
     FPasswordEntry    : TFtEntry;
     FUnlockButton     : TFtButton;
     FCancelButton     : TFtButton;
-    FSuspendButton    : TFtButton;
-    FRestartButton    : TFtButton;
-    FShutDownButton   : TFtButton;
+    FSessionApplet    : TShellSessionApplet;
+    FBatteryApplet    : TShellBatteryApplet;
+    FLanApplet        : TShellLanApplet;
+    FWiredApplet      : TShellWiredApplet;
+    FKeyboardApplet   : TShellKeyboardApplet;
 
     FState            : TShellLockScreenState;
     FIsLocked         : Boolean;
@@ -81,6 +83,7 @@ type
     procedure RefreshUserInfo(); virtual;
     procedure LoadWallpaper(); virtual;
     procedure SetWindowProperties(); virtual;
+    procedure DismissAllApplets(); virtual;
   public
     constructor Create(AStandalone: Boolean = False);
     destructor Destroy(); override;
@@ -258,12 +261,33 @@ begin
     FUnlockButton.Free();
   if Assigned(FCancelButton) then
     FCancelButton.Free();
-  if Assigned(FSuspendButton) then
-    FSuspendButton.Free();
-  if Assigned(FRestartButton) then
-    FRestartButton.Free();
-  if Assigned(FShutDownButton) then
-    FShutDownButton.Free();
+
+  if Assigned(FSessionApplet) then
+  begin
+    FSessionApplet.Free();
+    FSessionApplet := nil;
+  end;
+  if Assigned(FBatteryApplet) then
+  begin
+    FBatteryApplet.Free();
+    FBatteryApplet := nil;
+  end;
+  if Assigned(FLanApplet) then
+  begin
+    FLanApplet.Free();
+    FLanApplet := nil;
+  end;
+  if Assigned(FWiredApplet) then
+  begin
+    FWiredApplet.Free();
+    FWiredApplet := nil;
+  end;
+  if Assigned(FKeyboardApplet) then
+  begin
+    FKeyboardApplet.Free();
+    FKeyboardApplet := nil;
+  end;
+
   if Assigned(FDrawingArea) then
     FDrawingArea.Free();
   if Assigned(FWindow) then
@@ -297,42 +321,38 @@ begin
   FDrawingArea.OnPaint := @HandlePaint;
   FDrawingArea.OnMouseDown := @HandleDrawingAreaMouseDown;
 
-  // Masked password entry
-  FPasswordEntry := TFtEntry.Create(FWindow, 0, 0, 100, 36, '');
-  FPasswordEntry.Placeholder := 'Password';
+  // Masked password entry (macOS pill style)
+  FPasswordEntry := TFtEntry.Create(FWindow, 0, 0, 220, 36, '');
+  FPasswordEntry.Placeholder := 'Enter Password';
   FPasswordEntry.IsPassword := True;
-  FPasswordEntry.CornerRadius := 8.0;
+  FPasswordEntry.CornerRadius := 18.0;
   FPasswordEntry.OnSubmit := @HandlePasswordSubmit;
   FPasswordEntry.Visible := False;
 
   // Action buttons
-  FUnlockButton := TFtButton.Create(FWindow, 0, 0, 38, 36, '→');
-  FUnlockButton.CornerRadius := 8.0;
+  FUnlockButton := TFtButton.Create(FWindow, 0, 0, 30, 30, '→');
+  FUnlockButton.CornerRadius := 15.0;
+  FUnlockButton.Flat := True;
   FUnlockButton.OnClick := @HandleUnlockClick;
   FUnlockButton.Visible := False;
 
-  FCancelButton := TFtButton.Create(FWindow, 0, 0, 100, 32, 'Cancel');
-  FCancelButton.CornerRadius := 6.0;
+  FCancelButton := TFtButton.Create(FWindow, 0, 0, 80, 28, 'Cancel');
+  FCancelButton.CornerRadius := 14.0;
+  FCancelButton.Flat := True;
   FCancelButton.OnClick := @HandleCancelClick;
   FCancelButton.Visible := False;
 
-  // Top-right power controls
-  FSuspendButton := TFtButton.Create(FWindow, FWidth - 130, 14, 34, 34, '⏾');
-  FSuspendButton.CornerRadius := 6.0;
-  FSuspendButton.OnClick := @HandleSuspendClick;
-
-  FRestartButton := TFtButton.Create(FWindow, FWidth - 90, 14, 34, 34, '⟳');
-  FRestartButton.CornerRadius := 6.0;
-  FRestartButton.OnClick := @HandleRestartClick;
-
-  FShutDownButton := TFtButton.Create(FWindow, FWidth - 50, 14, 34, 34, '⏻');
-  FShutDownButton.CornerRadius := 6.0;
-  FShutDownButton.OnClick := @HandleShutDownClick;
+  // Top status bar applets (macOS style)
+  FSessionApplet := TShellSessionApplet.Create(FWindow, 0, 0, 32, 28, True);
+  FBatteryApplet := TShellBatteryApplet.Create(FWindow, 0, 0, 38, 28);
+  FLanApplet := TShellLanApplet.Create(FWindow, 0, 0, 32, 28);
+  FWiredApplet := TShellWiredApplet.Create(FWindow, 0, 0, 32, 28);
+  FKeyboardApplet := TShellKeyboardApplet.Create(FWindow, 0, 0, 42, 28);
 
   // Fonts
   FClockFont := TFtFontRef.Create('Sans 72');
   FDateFont := TFtFontRef.Create('Sans 18');
-  FUserFont := TFtFontRef.Create('Sans Bold 16');
+  FUserFont := TFtFontRef.Create('Sans Bold 18');
   FHintFont := TFtFontRef.Create('Sans 12');
 
   UpdateControlPositions();
@@ -426,30 +446,68 @@ end;
 
 procedure TShellLockScreen.UpdateControlPositions();
 var
-  cardX, cardY, cardW, cardH: Integer;
+  centerX, centerY: Integer;
+  entryW, entryH, entryX, entryY: Integer;
+  curX: Integer;
 begin
-  cardW := LOCK_CARD_WIDTH;
-  cardH := LOCK_CARD_HEIGHT;
-  cardX := ((FWidth - cardW) div 2) + FShakeOffset;
-  cardY := (FHeight - cardH) div 2;
+  // 1. Position top status bar applets (macOS style top-right)
+  curX := FWidth - 12;
+
+  if Assigned(FSessionApplet) and Assigned(FSessionApplet.Button) then
+  begin
+    curX := curX - 32;
+    FSessionApplet.SetBounds(curX, 3, 32, 28);
+    curX := curX - 4;
+  end;
+
+  if Assigned(FBatteryApplet) and Assigned(FBatteryApplet.Button) then
+  begin
+    FBatteryApplet.Button.Visible := FBatteryApplet.IsBatteryPresent;
+    if FBatteryApplet.Button.Visible then
+    begin
+      curX := curX - 38;
+      FBatteryApplet.SetBounds(curX, 3, 38, 28);
+      curX := curX - 4;
+    end;
+  end;
+
+  if Assigned(FLanApplet) and Assigned(FLanApplet.Button) then
+  begin
+    curX := curX - 32;
+    FLanApplet.SetBounds(curX, 3, 32, 28);
+    curX := curX - 4;
+  end;
+
+  if Assigned(FWiredApplet) and Assigned(FWiredApplet.Button) then
+  begin
+    curX := curX - 32;
+    FWiredApplet.SetBounds(curX, 3, 32, 28);
+    curX := curX - 4;
+  end;
+
+  if Assigned(FKeyboardApplet) and Assigned(FKeyboardApplet.Button) then
+  begin
+    curX := curX - 42;
+    FKeyboardApplet.SetBounds(curX, 3, 42, 28);
+  end;
+
+  // 2. Position floating central auth controls
+  centerX := (FWidth div 2) + FShakeOffset;
+  centerY := (FHeight div 2);
+
+  entryW := 280;
+  entryH := 36;
+  entryX := centerX - (entryW div 2);
+  entryY := centerY + 30;
 
   if Assigned(FPasswordEntry) then
-    FPasswordEntry.SetBounds(cardX + 36, cardY + 144, cardW - 72 - 44, 36);
+    FPasswordEntry.SetBounds(entryX + 14, entryY + 2, entryW - 28 - 32, entryH - 4);
 
   if Assigned(FUnlockButton) then
-    FUnlockButton.SetBounds(cardX + cardW - 36 - 38, cardY + 144, 38, 36);
+    FUnlockButton.SetBounds(entryX + entryW - 33, entryY + 3, 30, 30);
 
   if Assigned(FCancelButton) then
-    FCancelButton.SetBounds(cardX + (cardW - 100) div 2, cardY + 242, 100, 32);
-
-  if Assigned(FSuspendButton) then
-    FSuspendButton.SetBounds(FWidth - 130, 14, 34, 34);
-
-  if Assigned(FRestartButton) then
-    FRestartButton.SetBounds(FWidth - 90, 14, 34, 34);
-
-  if Assigned(FShutDownButton) then
-    FShutDownButton.SetBounds(FWidth - 50, 14, 34, 34);
+    FCancelButton.SetBounds(centerX - 40, entryY + 85, 80, 28);
 end;
 
 function TShellLockScreen.TryAcquireGrab(): Boolean;
@@ -557,6 +615,7 @@ begin
       ft_set_timer(0, nil, nil);
     if FtIsLibLoaded() then
       FtApp().Terminate();
+    Halt(0);
   end;
 end;
 
@@ -651,6 +710,19 @@ begin
   if not FGrabAcquired then
     TryAcquireGrab();
 
+  // Drive top status bar applets
+  if Assigned(FSessionApplet) then
+    FSessionApplet.ApplyThemeStyle();
+  if Assigned(FBatteryApplet) then
+    FBatteryApplet.Tick();
+  if Assigned(FLanApplet) then
+    FLanApplet.Tick();
+  if Assigned(FWiredApplet) then
+    FWiredApplet.Tick();
+  if Assigned(FKeyboardApplet) then
+    FKeyboardApplet.Tick();
+  UpdateControlPositions();
+
   // Monitor Caps Lock status
   if FtIsLibLoaded() then
   begin
@@ -708,18 +780,18 @@ var
   scale: Double;
   dw, dh, dx, dy: Integer;
   timeStr, dateStr, hintStr, initialChar: string;
-  cardX, cardY, cardW, cardH: Integer;
-  cardRad: Double;
+  centerX, centerY: Integer;
+  entryW, entryH, entryX, entryY: Integer;
   avatarX, avatarY: Integer;
 begin
   if Canvas = nil then Exit;
   sw := FWidth;
   sh := FHeight;
 
-  // 1. Draw base solid backdrop (#1e1e2e)
-  Canvas.DrawRect(0, 0, sw, sh, 30 / 255, 30 / 255, 46 / 255, 1.0);
+  // 1. Base solid backdrop
+  Canvas.DrawRect(0, 0, sw, sh, 20 / 255, 22 / 255, 32 / 255, 1.0);
 
-  // 2. Draw wallpaper if loaded
+  // 2. Wallpaper backdrop if loaded
   if FWallpaperBitmap <> nil then
   begin
     bw := FWallpaperBitmap.Width;
@@ -732,18 +804,22 @@ begin
       dx := (sw - dw) div 2;
       dy := (sh - dh) div 2;
       Canvas.DrawImageScaled(dx, dy, dw, dh, FWallpaperBitmap, 1.0);
-      // Dark acrylic tint scrim
-      Canvas.DrawRect(0, 0, sw, sh, 15 / 255, 15 / 255, 25 / 255, 0.45);
+      // Soft translucent acrylic dark tint
+      Canvas.DrawRect(0, 0, sw, sh, 12 / 255, 14 / 255, 22 / 255, 0.40);
     end;
   end
   else
   begin
     // Ambient fallback accents
-    Canvas.DrawCircle(sw div 2, sh div 2, Min(sw, sh) div 3, 40 / 255, 42 / 255, 62 / 255, 0.45);
-    Canvas.DrawCircle(sw div 2, sh div 2, Min(sw, sh) div 5, 48 / 255, 52 / 255, 78 / 255, 0.35);
+    Canvas.DrawCircle(sw div 2, sh div 2, Min(sw, sh) div 3, 35 / 255, 38 / 255, 55 / 255, 0.45);
+    Canvas.DrawCircle(sw div 2, sh div 2, Min(sw, sh) div 5, 45 / 255, 50 / 255, 75 / 255, 0.35);
   end;
 
-  // 3. Render Shield state
+  // 3. Top status bar glass plate (macOS style)
+  Canvas.DrawRect(0, 0, sw, 34, 15 / 255, 17 / 255, 25 / 255, 0.45);
+  Canvas.DrawLine(0, 34, sw, 34, 255 / 255, 255 / 255, 255 / 255, 0.08);
+
+  // 4. Render Shield state
   if FState = lssShield then
   begin
     if SameText(ShellSettings().ClockFormat, '12h') then
@@ -752,64 +828,116 @@ begin
       timeStr := FormatDateTime('hh:nn', Now);
 
     dateStr := FormatDateTime('dddd, mmmm d', Now);
-    hintStr := 'Press any key or click to unlock';
+    hintStr := 'Click or press any key to log in';
 
+    // Elegant large centered clock in upper third
     if Assigned(FClockFont) then
+    begin
+      Canvas.DrawTextCentered(1, (sh div 3) - 69, sw, 80, timeStr, 0, 0, 0, FClockFont.Handle);
       Canvas.DrawTextCentered(0, (sh div 3) - 70, sw, 80, timeStr, 1.0, 1.0, 1.0, FClockFont.Handle);
+    end;
 
     if Assigned(FDateFont) then
-      Canvas.DrawTextCentered(0, (sh div 3) + 20, sw, 30, dateStr, 0.85, 0.88, 0.95, FDateFont.Handle);
+    begin
+      Canvas.DrawTextCentered(1, (sh div 3) + 21, sw, 30, dateStr, 0, 0, 0, FDateFont.Handle);
+      Canvas.DrawTextCentered(0, (sh div 3) + 20, sw, 30, dateStr, 0.90, 0.92, 0.98, FDateFont.Handle);
+    end;
 
-    if Assigned(FHintFont) then
-      Canvas.DrawTextCentered(0, sh - 110, sw, 24, hintStr, 0.70, 0.75, 0.82, FHintFont.Handle);
-  end
-  // 4. Render Auth state
-  else
-  begin
-    cardW := LOCK_CARD_WIDTH;
-    cardH := LOCK_CARD_HEIGHT;
-    cardX := ((sw - cardW) div 2) + FShakeOffset;
-    cardY := (sh - cardH) div 2;
-    cardRad := LOCK_CARD_RADIUS;
+    // Sleek user avatar & prompt in lower region
+    avatarX := sw div 2;
+    avatarY := (sh * 2) div 3 - 30;
 
-    // Ambient drop shadow
-    Canvas.DrawShadow(cardX, cardY, cardW, cardH, cardRad, 0, 8, 28, 0, 0, 0, 0.50);
-    // Frosted card plate
-    Canvas.DrawRoundedRect(cardX, cardY, cardW, cardH, cardRad, 24 / 255, 25 / 255, 38 / 255, 0.94);
-    // Outline border
-    Canvas.DrawRoundedRectOutline(cardX, cardY, cardW, cardH, cardRad, 1.2, 69 / 255, 71 / 255, 90 / 255, 0.75);
+    Canvas.DrawShadow(avatarX - 32, avatarY - 32, 64, 64, 32.0, 0, 4, 16, 0, 0, 0, 0.35);
+    Canvas.DrawCircle(avatarX, avatarY, 34, 255 / 255, 255 / 255, 255 / 255, 0.25);
+    Canvas.DrawCircle(avatarX, avatarY, 32, 35 / 255, 38 / 255, 52 / 255, 0.95);
 
-    // User Avatar Circle
-    avatarX := cardX + (cardW div 2);
-    avatarY := cardY + 54;
-    Canvas.DrawCircle(avatarX, avatarY, 32, 137 / 255, 180 / 255, 250 / 255, 0.85);
-    Canvas.DrawCircle(avatarX, avatarY, 30, 49 / 255, 50 / 255, 68 / 255, 1.0);
-
-    // Avatar Initial
     initialChar := UpperCase(Copy(FUserName, 1, 1));
     if initialChar = '' then initialChar := 'U';
     if Assigned(FUserFont) then
-      Canvas.DrawTextCentered(avatarX - 20, avatarY - 14, 40, 28, initialChar, 0.95, 0.95, 0.98, FUserFont.Handle);
+      Canvas.DrawTextCentered(avatarX - 20, avatarY - 14, 40, 28, initialChar, 0.98, 0.98, 1.0, FUserFont.Handle);
 
-    // User Display Name
     if Assigned(FUserFont) then
-      Canvas.DrawTextCentered(cardX + 20, cardY + 95, cardW - 40, 24, FUserFullName, 0.95, 0.95, 0.98, FUserFont.Handle);
+    begin
+      Canvas.DrawTextCentered(1, avatarY + 45, sw, 24, FUserFullName, 0, 0, 0, FUserFont.Handle);
+      Canvas.DrawTextCentered(0, avatarY + 44, sw, 24, FUserFullName, 0.95, 0.96, 1.0, FUserFont.Handle);
+    end;
+
+    if Assigned(FHintFont) then
+    begin
+      Canvas.DrawTextCentered(1, avatarY + 75, sw, 20, hintStr, 0, 0, 0, FHintFont.Handle);
+      Canvas.DrawTextCentered(0, avatarY + 74, sw, 20, hintStr, 0.75, 0.80, 0.88, FHintFont.Handle);
+    end;
+  end
+  // 5. Render Auth state (macOS floating profile style)
+  else
+  begin
+    centerX := (sw div 2) + FShakeOffset;
+    centerY := (sh div 2);
+
+    // Ambient soft circular glow behind profile
+    Canvas.DrawCircle(centerX, centerY - 10, 220, 10 / 255, 12 / 255, 18 / 255, 0.32);
+
+    // Large floating circular avatar
+    avatarX := centerX;
+    avatarY := centerY - 55;
+
+    Canvas.DrawShadow(avatarX - 44, avatarY - 44, 88, 88, 44.0, 0, 6, 20, 0, 0, 0, 0.40);
+    Canvas.DrawCircle(avatarX, avatarY, 44, 255 / 255, 255 / 255, 255 / 255, 0.30);
+    Canvas.DrawCircle(avatarX, avatarY, 42, 32 / 255, 35 / 255, 50 / 255, 0.95);
+
+    initialChar := UpperCase(Copy(FUserName, 1, 1));
+    if initialChar = '' then initialChar := 'U';
+    if Assigned(FUserFont) then
+      Canvas.DrawTextCentered(avatarX - 24, avatarY - 16, 48, 32, initialChar, 0.98, 0.98, 1.0, FUserFont.Handle);
+
+    // User display name
+    if Assigned(FUserFont) then
+    begin
+      Canvas.DrawTextCentered(centerX - 160, centerY - 4, 320, 26, FUserFullName, 0, 0, 0, FUserFont.Handle);
+      Canvas.DrawTextCentered(centerX - 160, centerY - 5, 320, 26, FUserFullName, 0.98, 0.98, 1.0, FUserFont.Handle);
+    end;
+
+    // Password input capsule (pill shape)
+    entryW := 280;
+    entryH := 36;
+    entryX := centerX - (entryW div 2);
+    entryY := centerY + 30;
+
+    Canvas.DrawShadow(entryX, entryY, entryW, entryH, 18.0, 0, 4, 16, 0, 0, 0, 0.35);
+    Canvas.DrawRoundedRect(entryX, entryY, entryW, entryH, 18.0, 22 / 255, 24 / 255, 34 / 255, 0.75);
+    Canvas.DrawRoundedRectOutline(entryX, entryY, entryW, entryH, 18.0, 1.2, 255 / 255, 255 / 255, 255 / 255, 0.25);
 
     // Caps Lock indicator
     if FCapsLockActive and Assigned(FHintFont) then
-      Canvas.DrawTextCentered(cardX + 20, cardY + 188, cardW - 40, 18, '⇪ Caps Lock is on', 0.96, 0.78, 0.35, FHintFont.Handle);
+      Canvas.DrawTextCentered(centerX - 140, centerY + 70, 280, 18, '⇪ Caps Lock is on', 0.98, 0.78, 0.32, FHintFont.Handle);
 
-    // Error message indicator
+    // Error message
     if (FErrorMessage <> '') and Assigned(FHintFont) then
-      Canvas.DrawTextCentered(cardX + 20, cardY + 208, cardW - 40, 18, FErrorMessage, 0.96, 0.40, 0.40, FHintFont.Handle);
+      Canvas.DrawTextCentered(centerX - 160, centerY + 70, 320, 18, FErrorMessage, 1.0, 0.45, 0.45, FHintFont.Handle);
   end;
+end;
+
+procedure TShellLockScreen.DismissAllApplets();
+begin
+  if Assigned(FSessionApplet) then
+    FSessionApplet.HidePopup();
+  if Assigned(FBatteryApplet) then
+    FBatteryApplet.HidePopup();
+  if Assigned(FLanApplet) then
+    FLanApplet.HidePopup();
+  if Assigned(FWiredApplet) then
+    FWiredApplet.HidePopup();
+  if Assigned(FKeyboardApplet) then
+    FKeyboardApplet.HidePopup();
 end;
 
 procedure TShellLockScreen.HandleDrawingAreaMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer);
 var
-  cardX, cardY, cardW, cardH: Integer;
+  centerX, centerY: Integer;
 begin
   if Button <> 1 then Exit;
+
+  DismissAllApplets();
 
   if FState = lssShield then
   begin
@@ -817,13 +945,11 @@ begin
   end
   else
   begin
-    cardW := LOCK_CARD_WIDTH;
-    cardH := LOCK_CARD_HEIGHT;
-    cardX := ((FWidth - cardW) div 2) + FShakeOffset;
-    cardY := (FHeight - cardH) div 2;
+    centerX := (FWidth div 2) + FShakeOffset;
+    centerY := (FHeight div 2);
 
-    // Clicking outside auth card transitions back to shield mode
-    if (X < cardX) or (X >= cardX + cardW) or (Y < cardY) or (Y >= cardY + cardH) then
+    // Clicking outside auth area (and not on top bar) transitions back to shield mode
+    if (Y > 34) and ((X < centerX - 160) or (X >= centerX + 160) or (Y < centerY - 100) or (Y >= centerY + 180)) then
       SetState(lssShield);
   end;
 end;
@@ -852,7 +978,10 @@ begin
   else
   begin
     if AKey = XK_Escape then
-      SetState(lssShield)
+    begin
+      DismissAllApplets();
+      SetState(lssShield);
+    end
     else if (AKey = XK_Return) or (AKey = XK_KP_Enter) then
       DoAuthenticate();
   end;

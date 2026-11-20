@@ -340,53 +340,50 @@ begin
   inherited SetupUI();
   if FWindow = nil then Exit;
 
-  // Session selector button
-  FSessionButton := TFtButton.Create(FWindow, 0, 0, 160, 32, '⚙ ' + GetCurrentSessionName());
-  FSessionButton.CornerRadius := 6.0;
+  // Session selector pill button
+  FSessionButton := TFtButton.Create(FWindow, 0, 0, 180, 28, '⚙ ' + GetCurrentSessionName() + ' ▾');
+  FSessionButton.CornerRadius := 14.0;
+  FSessionButton.Flat := True;
   FSessionButton.OnClick := @HandleSessionButtonClick;
   FSessionButton.Visible := False;
 
-  // User switcher dropdown button
-  FUserSwitchButton := TFtButton.Create(FWindow, 0, 0, 24, 24, '▾');
-  FUserSwitchButton.CornerRadius := 4.0;
+  // User switcher pill button
+  FUserSwitchButton := TFtButton.Create(FWindow, 0, 0, 140, 26, '⇄ Switch User');
+  FUserSwitchButton.CornerRadius := 13.0;
+  FUserSwitchButton.Flat := True;
   FUserSwitchButton.OnClick := @HandleUserSwitchClick;
-  FUserSwitchButton.Visible := (Length(FUsers) > 1);
+  FUserSwitchButton.Visible := False;
 
   UpdateControlPositions();
 end;
 
 procedure TShellGreeter.UpdateControlPositions();
 var
-  cardX, cardY, cardW, cardH: Integer;
+  centerX, centerY, entryY: Integer;
 begin
   inherited UpdateControlPositions();
 
-  cardW := GREETER_CARD_WIDTH;
-  cardH := GREETER_CARD_HEIGHT;
-  cardX := ((FWidth - cardW) div 2) + FShakeOffset;
-  cardY := (FHeight - cardH) div 2;
+  centerX := (FWidth div 2) + FShakeOffset;
+  centerY := (FHeight div 2);
+  entryY := centerY + 30;
 
-  // Re-align base controls to greeter card dimensions
-  if Assigned(FPasswordEntry) then
-    FPasswordEntry.SetBounds(cardX + 36, cardY + 144, cardW - 72 - 44, 36);
-
-  if Assigned(FUnlockButton) then
-    FUnlockButton.SetBounds(cardX + cardW - 36 - 38, cardY + 144, 38, 36);
-
-  if Assigned(FCancelButton) then
-    FCancelButton.SetBounds(cardX + cardW - 36 - 90, cardY + 252, 90, 32);
-
+  // Align session pill button below password input capsule
   if Assigned(FSessionButton) then
   begin
-    FSessionButton.SetBounds(cardX + 36, cardY + 252, 170, 32);
+    FSessionButton.SetBounds(centerX - 90, entryY + 46, 180, 28);
     FSessionButton.Visible := (FState = lssAuth);
+    FSessionButton.Caption := '⚙ ' + GetCurrentSessionName() + ' ▾';
   end;
 
+  // Align user switcher button below session selector
   if Assigned(FUserSwitchButton) then
   begin
-    FUserSwitchButton.SetBounds(cardX + (cardW div 2) + 70, cardY + 95, 24, 24);
+    FUserSwitchButton.SetBounds(centerX - 70, entryY + 80, 140, 26);
     FUserSwitchButton.Visible := (FState = lssAuth) and (Length(FUsers) > 1);
   end;
+
+  if Assigned(FCancelButton) and (Length(FUsers) > 1) then
+    FCancelButton.Visible := False;
 end;
 
 procedure TShellGreeter.HandleSessionButtonClick(Sender: TFtButton);
