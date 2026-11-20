@@ -542,6 +542,9 @@ function GetDisplayIconSVG(AMonitorCount: Integer; AIsDark: Boolean): string;
 
 implementation
 
+uses
+  ShellSama.LockScreen;
+
 function IsDarkTheme(): Boolean;
 begin
   if FtIsLibLoaded() then
@@ -1863,7 +1866,11 @@ end;
 
 procedure TShellSessionApplet.HandleLockScreen(Sender: TFtMenuItem);
 begin
-  ExecShellCmdAsync('xdg-screensaver lock || loginctl lock-session || xflock4');
+  HidePopup();
+  if Assigned(GlobalLockScreen) then
+    GlobalLockScreen.Lock()
+  else
+    ExecShellCmdAsync('xdg-screensaver lock || loginctl lock-session || xflock4');
 end;
 
 procedure TShellSessionApplet.HandleSuspend(Sender: TFtMenuItem);

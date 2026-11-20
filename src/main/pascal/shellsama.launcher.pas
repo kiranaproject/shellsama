@@ -196,6 +196,9 @@ function LauncherEventFilterCallback(event: Pointer): cint32; cdecl;
 
 implementation
 
+uses
+  ShellSama.LockScreen;
+
 procedure c_free(p: Pointer); cdecl; external 'c' name 'free';
 function libc_system(cmd: PChar): cint; cdecl; external 'c' name 'system';
 
@@ -1063,6 +1066,7 @@ var
 begin
   Result := False;
   if Event = nil then Exit;
+  if Assigned(GlobalLockScreen) and GlobalLockScreen.IsLocked then Exit;
 
   evType := Event^.response_type and $7F;
 
@@ -1126,6 +1130,19 @@ begin
         end
         else if FSuperPressed and not isSuper then
         begin
+          if Assigned(FKeySymbols) then
+          begin
+            sym := xcb_key_symbols_get_keysym(FKeySymbols, keyEv^.detail, 0);
+            if (sym = XK_l) or (sym = XK_L) then
+            begin
+              FOtherKeyPressed := True;
+              UngrabSuperKey();
+              if Assigned(GlobalLockScreen) then
+                GlobalLockScreen.Lock();
+              Exit(True);
+            end;
+          end;
+
           // Super + something else is a shortcut for another app, not a launcher.
           FOtherKeyPressed := True;
           UngrabSuperKey();

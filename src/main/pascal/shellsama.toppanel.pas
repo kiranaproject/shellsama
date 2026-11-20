@@ -144,7 +144,7 @@ var
 implementation
 
 uses
-  ShellSama.BottomPanel;
+  ShellSama.BottomPanel, ShellSama.LockScreen;
 
 const
   SVG_PANEL_ICON_COLOR_LIGHT = '#2c3e50';
@@ -1019,6 +1019,9 @@ end;
 procedure TShellTopPanel.Tick();
 begin
   UpdateClock();
+
+  if Assigned(GlobalLockScreen) and GlobalLockScreen.IsLocked then
+    GlobalLockScreen.Tick();
 
   if Assigned(FVolumeApplet) then
     FVolumeApplet.Tick();

@@ -15,7 +15,8 @@ uses
   ShellSama.TopPanel,
   ShellSama.BottomPanel,
   ShellSama.Dock,
-  ShellSama.Desktop;
+  ShellSama.Desktop,
+  ShellSama.LockScreen;
 
 var
   Panel: TShellPanel;
@@ -25,6 +26,7 @@ var
   Dock: TShellDock;
   Desktop: TShellDesktop;
   AutoShowLauncher: Boolean;
+  LockOnly: Boolean;
   NoTopPanel: Boolean;
   NoBottomPanel: Boolean;
   UseDock: Boolean;
@@ -37,6 +39,7 @@ begin
   WriteLn('shellsama — Samarinda Desktop Shell');
 
   AutoShowLauncher := False;
+  LockOnly := False;
   NoTopPanel := False;
   NoBottomPanel := False;
   UseDock := True;
@@ -63,6 +66,7 @@ begin
       WriteLn('  --no-dock              Alias for --taskbar');
       WriteLn('  --no-desktop           Do not display the desktop wallpaper surface');
       WriteLn('  --wallpaper <path>     Load and display the specified wallpaper image');
+      WriteLn('  --lock                 Lock the screen immediately');
       WriteLn('  --version, -v          Print version and exit');
       WriteLn('  --help, -h             Print this help message and exit');
       Halt(0);
@@ -90,6 +94,10 @@ begin
     else if arg = '--no-desktop' then
     begin
       NoDesktop := True;
+    end
+    else if arg = '--lock' then
+    begin
+      LockOnly := True;
     end
     else if (arg = '--wallpaper') and (i < ParamCount) then
     begin
@@ -122,6 +130,19 @@ begin
       end;
     end;
 
+    if LockOnly then
+    begin
+      InitGlobalLockScreen(True);
+      try
+        GlobalLockScreen().Lock();
+        FtApp().Run();
+      finally
+        FreeGlobalLockScreen();
+      end;
+      Exit;
+    end;
+
+    InitGlobalLockScreen(False);
     try
       if not NoDesktop then
       begin
@@ -185,6 +206,7 @@ begin
         Launcher.Free();
       end;
     finally
+      FreeGlobalLockScreen();
       if Assigned(Desktop) then
         Desktop.Free();
     end;

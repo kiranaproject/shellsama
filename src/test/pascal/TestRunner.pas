@@ -18,7 +18,8 @@ uses
   ShellSama.Desktop.Test,
   ShellSama.Tray.Test,
   ShellSama.Applets.Test,
-  ShellSama.Settings.Test;
+  ShellSama.Settings.Test,
+  ShellSama.LockScreen.Test;
 
 var
   Application: TTestRunner;
