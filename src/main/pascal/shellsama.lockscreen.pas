@@ -495,16 +495,22 @@ begin
   centerX := (FWidth div 2) + FShakeOffset;
   centerY := (FHeight div 2);
 
-  entryW := 280;
+  entryW := 260;
   entryH := 36;
   entryX := centerX - (entryW div 2);
   entryY := centerY + 30;
 
   if Assigned(FPasswordEntry) then
-    FPasswordEntry.SetBounds(entryX + 14, entryY + 2, entryW - 28 - 32, entryH - 4);
+  begin
+    FPasswordEntry.SetBounds(entryX, entryY, entryW, entryH);
+    FPasswordEntry.CornerRadius := 18.0;
+  end;
 
   if Assigned(FUnlockButton) then
-    FUnlockButton.SetBounds(entryX + entryW - 33, entryY + 3, 30, 30);
+  begin
+    FUnlockButton.SetBounds(entryX + entryW - 32, entryY + 4, 28, 28);
+    FUnlockButton.CornerRadius := 14.0;
+  end;
 
   if Assigned(FCancelButton) then
     FCancelButton.SetBounds(centerX - 40, entryY + 85, 80, 28);
@@ -781,7 +787,6 @@ var
   dw, dh, dx, dy: Integer;
   timeStr, dateStr, hintStr, initialChar: string;
   centerX, centerY: Integer;
-  entryW, entryH, entryX, entryY: Integer;
   avatarX, avatarY: Integer;
 begin
   if Canvas = nil then Exit;
@@ -895,16 +900,6 @@ begin
       Canvas.DrawTextCentered(centerX - 160, centerY - 4, 320, 26, FUserFullName, 0, 0, 0, FUserFont.Handle);
       Canvas.DrawTextCentered(centerX - 160, centerY - 5, 320, 26, FUserFullName, 0.98, 0.98, 1.0, FUserFont.Handle);
     end;
-
-    // Password input capsule (pill shape)
-    entryW := 280;
-    entryH := 36;
-    entryX := centerX - (entryW div 2);
-    entryY := centerY + 30;
-
-    Canvas.DrawShadow(entryX, entryY, entryW, entryH, 18.0, 0, 4, 16, 0, 0, 0, 0.35);
-    Canvas.DrawRoundedRect(entryX, entryY, entryW, entryH, 18.0, 22 / 255, 24 / 255, 34 / 255, 0.75);
-    Canvas.DrawRoundedRectOutline(entryX, entryY, entryW, entryH, 18.0, 1.2, 255 / 255, 255 / 255, 255 / 255, 0.25);
 
     // Caps Lock indicator
     if FCapsLockActive and Assigned(FHintFont) then
