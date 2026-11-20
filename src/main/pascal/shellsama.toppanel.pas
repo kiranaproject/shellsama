@@ -58,8 +58,12 @@ type
 
     // Cached EWMH atoms
     FAtomNetShowingDesktop: Cardinal;
+    FAtomSamarindaTheme    : Cardinal;
+    FAtomSamarindaThemeDark: Cardinal;
+    FAtomNetWmTheme        : Cardinal;
 
     procedure InitAtoms();
+    procedure PublishThemeToRoot(ADarkMode: Boolean);
     procedure SetupWindow();
 
     procedure HandleLauncherButtonClick(Sender: TFtButton);
@@ -783,6 +787,46 @@ procedure TShellTopPanel.InitAtoms();
 begin
   if FConn = nil then Exit;
   FAtomNetShowingDesktop := InternAtom(FConn, '_NET_SHOWING_DESKTOP');
+  FAtomSamarindaTheme := InternAtom(FConn, '_SAMARINDA_THEME');
+  FAtomSamarindaThemeDark := InternAtom(FConn, '_SAMARINDA_THEME_DARK');
+  FAtomNetWmTheme := InternAtom(FConn, '_NET_WM_THEME');
+  PublishThemeToRoot(ShellSettings().DarkMode);
+end;
+
+procedure TShellTopPanel.PublishThemeToRoot(ADarkMode: Boolean);
+var
+  themeStr: string;
+  darkVal: Cardinal;
+begin
+  if (FConn = nil) or (FRootWindow = 0) then Exit;
+
+  if ADarkMode then
+  begin
+    themeStr := 'dark';
+    darkVal := 1;
+  end
+  else
+  begin
+    themeStr := 'light';
+    darkVal := 0;
+  end;
+
+  if FAtomSamarindaTheme <> 0 then
+    xcb_change_property(FConn, XCB_PROP_MODE_REPLACE, FRootWindow,
+                        FAtomSamarindaTheme, XCB_ATOM_STRING, 8,
+                        Length(themeStr), PChar(themeStr));
+
+  if FAtomSamarindaThemeDark <> 0 then
+    xcb_change_property(FConn, XCB_PROP_MODE_REPLACE, FRootWindow,
+                        FAtomSamarindaThemeDark, XCB_ATOM_CARDINAL, 32,
+                        1, @darkVal);
+
+  if FAtomNetWmTheme <> 0 then
+    xcb_change_property(FConn, XCB_PROP_MODE_REPLACE, FRootWindow,
+                        FAtomNetWmTheme, XCB_ATOM_STRING, 8,
+                        Length(themeStr), PChar(themeStr));
+
+  xcb_flush(FConn);
 end;
 
 procedure TShellTopPanel.SetupWindow();
@@ -1115,6 +1159,7 @@ procedure TShellTopPanel.HandleSettingsDarkModeChange(Sender: TObject);
 begin
   if FtIsLibLoaded() then
     FtApp().DarkMode := ShellSettings().DarkMode;
+  PublishThemeToRoot(ShellSettings().DarkMode);
   ApplyThemeStyle();
   if Assigned(FLauncher) and Assigned(FLauncher.Window) then
     FLauncher.Window.Invalidate();

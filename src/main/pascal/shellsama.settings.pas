@@ -201,11 +201,27 @@ begin
 end;
 
 procedure TShellSettings.SetDefaults();
+var
+  envDm, envTheme: string;
 begin
   FWallpaperPath := '/usr/share/backgrounds/samarinda.jpg';
   FWallpaperMode := wmFill;
   FDarkMode := False;
   FAccentColor := 'Purple';
+
+  envDm := LowerCase(Trim(GetEnvironmentVariable('FT_DARK_MODE')));
+  envTheme := LowerCase(Trim(GetEnvironmentVariable('FT_THEME')));
+  if envTheme = '' then envTheme := LowerCase(Trim(GetEnvironmentVariable('SAMARINDA_THEME')));
+  if envTheme = '' then envTheme := LowerCase(Trim(GetEnvironmentVariable('KIRANA_THEME')));
+
+  if (envDm = '1') or (envDm = 'true') or (envDm = 'yes') or (envDm = 'dark') then
+    FDarkMode := True
+  else if (envDm = '0') or (envDm = 'false') or (envDm = 'no') or (envDm = 'light') then
+    FDarkMode := False
+  else if (envTheme = 'dark') or (Pos('dark', envTheme) > 0) then
+    FDarkMode := True
+  else if (envTheme = 'light') or (Pos('light', envTheme) > 0) then
+    FDarkMode := False;
 
   FResolution := '1920x1080';
   FRefreshRate := 60;
