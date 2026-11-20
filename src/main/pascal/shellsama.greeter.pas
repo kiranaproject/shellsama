@@ -49,6 +49,7 @@ type
     procedure SetupUI(); override;
     procedure UpdateControlPositions(); override;
     procedure HandlePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas); override;
+    procedure RefreshUserInfo(); override;
     procedure DoAuthenticate(); override;
   public
     constructor Create(AStandalone: Boolean = True; ATestMode: Boolean = False);
@@ -491,6 +492,15 @@ begin
     execCmd := 'x-session-manager || mate-session || shellsama';
 
   libc_system(PChar(execCmd + ' &'));
+end;
+
+procedure TShellGreeter.RefreshUserInfo();
+begin
+  if (FSelectedUserIndex >= 0) and (FSelectedUserIndex < Length(FUsers)) then
+  begin
+    FUserName := FUsers[FSelectedUserIndex].Name;
+    FUserFullName := FUsers[FSelectedUserIndex].RealName;
+  end;
 end;
 
 procedure TShellGreeter.DoAuthenticate();
