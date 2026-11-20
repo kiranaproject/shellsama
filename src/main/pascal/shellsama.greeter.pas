@@ -297,26 +297,40 @@ var
   defHint: string;
   i: Integer;
 begin
+  defHint := '';
   if LightDM().Available then
   begin
     FSessions := LightDM().GetSessions();
     if Length(FSessions) > 0 then
-    begin
       defHint := LightDM().DefaultSession;
-      if defHint <> '' then
+  end;
+
+  if Length(FSessions) = 0 then
+    EnumerateNativeSessions(FSessions);
+
+  // 1. Check default session hint if present
+  if defHint <> '' then
+  begin
+    for i := 0 to High(FSessions) do
+      if SameText(FSessions[i].Key, defHint) then
       begin
-        for i := 0 to High(FSessions) do
-          if SameText(FSessions[i].Key, defHint) then
-          begin
-            FSelectedSessionIdx := i;
-            Break;
-          end;
+        FSelectedSessionIdx := i;
+        Exit;
       end;
+  end;
+
+  // 2. Prefer native Samarinda session
+  for i := 0 to High(FSessions) do
+  begin
+    if SameText(FSessions[i].Key, 'samarinda') then
+    begin
+      FSelectedSessionIdx := i;
       Exit;
     end;
   end;
 
-  EnumerateNativeSessions(FSessions);
+  // 3. Fallback to first enumerated session
+  FSelectedSessionIdx := 0;
 end;
 
 function TShellGreeter.GetCurrentSessionKey(): string;

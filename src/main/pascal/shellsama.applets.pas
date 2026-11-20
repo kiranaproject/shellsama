@@ -1890,7 +1890,7 @@ end;
 
 procedure TShellSessionApplet.HandleLogOut(Sender: TFtMenuItem);
 begin
-  ExecShellCmdAsync('loginctl terminate-user $USER || pkill -u $USER');
+  ExecShellCmdAsync('sessionsama --logout || loginctl terminate-user $USER || pkill -u $USER');
 end;
 
 procedure TShellSessionApplet.HandleRestart(Sender: TFtMenuItem);
