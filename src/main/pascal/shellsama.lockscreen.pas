@@ -27,7 +27,7 @@ type
   TShellLockScreenState = (lssShield, lssAuth);
 
   TShellLockScreen = class
-  private
+  protected
     FWindow           : TFtWindow;
     FDrawingArea      : TFtDrawingArea;
     FPasswordEntry    : TFtEntry;
@@ -64,33 +64,33 @@ type
 
     FGrabAcquired     : Boolean;
 
-    procedure SetupUI();
-    procedure UpdateControlPositions();
-    procedure HandlePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas);
-    procedure HandleDrawingAreaMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer);
-    procedure HandleWindowKey(Sender: TFtWindow; AKey: LongWord; AIsDown: Boolean);
-    procedure HandlePasswordSubmit(Sender: TFtWidget; const AText: string);
-    procedure HandleUnlockClick(Sender: TFtButton);
-    procedure HandleCancelClick(Sender: TFtButton);
-    procedure HandleSuspendClick(Sender: TFtButton);
-    procedure HandleRestartClick(Sender: TFtButton);
-    procedure HandleShutDownClick(Sender: TFtButton);
+    procedure SetupUI(); virtual;
+    procedure UpdateControlPositions(); virtual;
+    procedure HandlePaint(Sender: TFtDrawingArea; Canvas: TFtCanvas); virtual;
+    procedure HandleDrawingAreaMouseDown(Sender: TFtDrawingArea; X, Y, Button: Integer); virtual;
+    procedure HandleWindowKey(Sender: TFtWindow; AKey: LongWord; AIsDown: Boolean); virtual;
+    procedure HandlePasswordSubmit(Sender: TFtWidget; const AText: string); virtual;
+    procedure HandleUnlockClick(Sender: TFtButton); virtual;
+    procedure HandleCancelClick(Sender: TFtButton); virtual;
+    procedure HandleSuspendClick(Sender: TFtButton); virtual;
+    procedure HandleRestartClick(Sender: TFtButton); virtual;
+    procedure HandleShutDownClick(Sender: TFtButton); virtual;
 
-    function  TryAcquireGrab(): Boolean;
-    procedure ReleaseGrab();
-    procedure RefreshUserInfo();
-    procedure LoadWallpaper();
-    procedure SetWindowProperties();
+    function  TryAcquireGrab(): Boolean; virtual;
+    procedure ReleaseGrab(); virtual;
+    procedure RefreshUserInfo(); virtual;
+    procedure LoadWallpaper(); virtual;
+    procedure SetWindowProperties(); virtual;
   public
     constructor Create(AStandalone: Boolean = False);
     destructor Destroy(); override;
 
-    procedure Lock();
-    procedure Unlock();
-    procedure SetState(AState: TShellLockScreenState);
-    procedure StartShake();
-    procedure DoAuthenticate();
-    procedure Tick();
+    procedure Lock(); virtual;
+    procedure Unlock(); virtual;
+    procedure SetState(AState: TShellLockScreenState); virtual;
+    procedure StartShake(); virtual;
+    procedure DoAuthenticate(); virtual;
+    procedure Tick(); virtual;
 
     property Window: TFtWindow read FWindow;
     property State: TShellLockScreenState read FState write SetState;
@@ -107,6 +107,8 @@ type
 function GlobalLockScreen(): TShellLockScreen;
 procedure InitGlobalLockScreen(AStandalone: Boolean = False);
 procedure FreeGlobalLockScreen();
+function GetCurrentUserName(): string;
+function GetCurrentUserFullName(): string;
 
 implementation
 

@@ -19,7 +19,8 @@ uses
   ShellSama.Tray.Test,
   ShellSama.Applets.Test,
   ShellSama.Settings.Test,
-  ShellSama.LockScreen.Test;
+  ShellSama.LockScreen.Test,
+  ShellSama.Greeter.Test;
 
 var
   Application: TTestRunner;

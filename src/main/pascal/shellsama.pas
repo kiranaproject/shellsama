@@ -16,7 +16,9 @@ uses
   ShellSama.BottomPanel,
   ShellSama.Dock,
   ShellSama.Desktop,
-  ShellSama.LockScreen;
+  ShellSama.LockScreen,
+  ShellSama.LightDM,
+  ShellSama.Greeter;
 
 var
   Panel: TShellPanel;
@@ -27,6 +29,8 @@ var
   Desktop: TShellDesktop;
   AutoShowLauncher: Boolean;
   LockOnly: Boolean;
+  GreeterMode: Boolean;
+  TestMode: Boolean;
   NoTopPanel: Boolean;
   NoBottomPanel: Boolean;
   UseDock: Boolean;
@@ -40,6 +44,8 @@ begin
 
   AutoShowLauncher := False;
   LockOnly := False;
+  GreeterMode := False;
+  TestMode := False;
   NoTopPanel := False;
   NoBottomPanel := False;
   UseDock := True;
@@ -67,6 +73,8 @@ begin
       WriteLn('  --no-desktop           Do not display the desktop wallpaper surface');
       WriteLn('  --wallpaper <path>     Load and display the specified wallpaper image');
       WriteLn('  --lock                 Lock the screen immediately');
+      WriteLn('  --greeter              Launch in display manager login greeter mode');
+      WriteLn('  --test-mode            Run greeter in test mode (no session spawning)');
       WriteLn('  --version, -v          Print version and exit');
       WriteLn('  --help, -h             Print this help message and exit');
       Halt(0);
@@ -98,6 +106,14 @@ begin
     else if arg = '--lock' then
     begin
       LockOnly := True;
+    end
+    else if arg = '--greeter' then
+    begin
+      GreeterMode := True;
+    end
+    else if arg = '--test-mode' then
+    begin
+      TestMode := True;
     end
     else if (arg = '--wallpaper') and (i < ParamCount) then
     begin
@@ -138,6 +154,21 @@ begin
         FtApp().Run();
       finally
         FreeGlobalLockScreen();
+      end;
+      Exit;
+    end;
+
+    if GreeterMode then
+    begin
+      if GetEnvironmentVariable('LIGHTDM_GREETER_SIGNAL_PIPE') <> '' then
+        LightDM().Connect();
+
+      InitGlobalGreeter(TestMode);
+      try
+        GlobalGreeter().Lock();
+        FtApp().Run();
+      finally
+        FreeGlobalGreeter();
       end;
       Exit;
     end;

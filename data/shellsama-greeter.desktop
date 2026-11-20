@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Samarinda Greeter
+Comment=Samarinda Unified Display Manager Greeter
+Exec=shellsama --greeter
+Type=Application
+X-Ubuntu-Gettext-Domain=shellsama
