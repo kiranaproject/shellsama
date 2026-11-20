@@ -355,7 +355,7 @@ begin
   if FWindow = nil then Exit;
 
   // Session selector pill button
-  FSessionButton := TFtButton.Create(FWindow, 0, 0, 180, 28, '⚙ ' + GetCurrentSessionName() + ' ▾');
+  FSessionButton := TFtButton.Create(FWindow, 0, 0, 180, 28, '⚙ ' + GetCurrentSessionName());
   FSessionButton.CornerRadius := 14.0;
   FSessionButton.Flat := True;
   FSessionButton.OnClick := @HandleSessionButtonClick;
@@ -386,7 +386,7 @@ begin
   begin
     FSessionButton.SetBounds(centerX - 90, entryY + 46, 180, 28);
     FSessionButton.Visible := (FState = lssAuth);
-    FSessionButton.Caption := '⚙ ' + GetCurrentSessionName() + ' ▾';
+    FSessionButton.Caption := '⚙ ' + GetCurrentSessionName();
   end;
 
   // Align user switcher button below session selector

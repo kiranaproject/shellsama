@@ -817,7 +817,6 @@ begin
 
   // 3. Top status bar glass plate (macOS style)
   Canvas.DrawRect(0, 0, sw, 34, 15 / 255, 17 / 255, 25 / 255, 0.45);
-  Canvas.DrawLine(0, 34, sw, 34, 255 / 255, 255 / 255, 255 / 255, 0.08);
 
   // 4. Render Shield state
   if FState = lssShield then
